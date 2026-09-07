@@ -77,6 +77,7 @@ export async function analyzePackage(file: File): Promise<CanonicalReport> {
   if (!isCanonicalReport(body)) {
     throw new ApiError("The service returned an invalid canonical report.");
   }
+
   return body;
 }
 
