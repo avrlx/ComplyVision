@@ -38,3 +38,14 @@ it("fails closed before database setup and reports write failure honestly", asyn
   expect(response.status).toBe(503);
   expect((await response.json()).error).toContain("Report not saved");
 });
+it("retains the original filename and a bounded JPEG preview", async () => {
+  const preview = "data:image/jpeg;base64,/9j/2Q==";
+  expect((await POST(request({ id, report: reportFixture(), source_filename: "label.jpg", source_image_data_url: preview }))).status).toBe(201);
+  expect(mocks.insert).toHaveBeenCalledWith(expect.objectContaining({ source_filename: "label.jpg", source_image_data_url: preview }));
+});
+it("rejects active-content or oversized preview payloads", async () => {
+  for (const preview of ["data:image/svg+xml;base64,PHN2Zz4=", "data:image/jpeg;base64," + "A".repeat(2097152)]) {
+    expect((await POST(request({ id, report: reportFixture(), source_image_data_url: preview }))).status).toBe(400);
+  }
+  expect(mocks.insert).not.toHaveBeenCalled();
+});

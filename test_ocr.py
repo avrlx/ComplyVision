@@ -78,6 +78,7 @@ def run_pipeline(image_path=IMAGE_PATH, marker_size_mm=MARKER_SIZE_MM):
             debug=True,
         )
         net_qty["glyph_measurement"] = glyph_measurement
+        fields["net_quantity_font_height_measurement"] = glyph_measurement
 
     contrast_targets = {
         target: measure_local_contrast(

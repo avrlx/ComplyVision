@@ -53,3 +53,22 @@ Baseline: validated main `16136cceecf7810a63c47865a930a95b8e74a8c5`. No addition
 Validation: backend pytest **110 passed + 33 subtests** (one pre-existing TestClient deprecation warning); frontend **28 tests passed**, lint passed, production build passed. PostgreSQL tests execute the migrations with two users and anonymous access; follow-up SQL/PDF checks passed after the final fixes. Real `/health` and `/analyze` returned HTTP 200; OCR succeeded with five evidence images and canonical REVIEW (8 PASS, 0 FAIL, 1 REVIEW, 1 N/A). The real report is accepted by storage validation. No conflicts or backend changes.
 
 Browser-level login verification was blocked by automatic approval review due to the account usage limit. Provider gating, OTP verification, routing cookies, authorization, and save/retry/reload have automated coverage; no live delivery success is claimed.
+
+## PR #3 and remaining PR #5 integration (2026-09-07)
+
+Fetched current remote main and both PR heads before review. PR #5 remains `7cceda00b98c4e2ff2c1636c24b9c662275aac4f`; PR #3 is closed at `ad84ae75ed19be83ab53a4e3b9cba98d2edbb333`. Integration starts from local main `4d169182308e90e7992992334471cf6dd1bbff7c` and preserves its tested auth, database, PDF, extraction, and rule safeguards.
+
+| Area | Resolution |
+| --- | --- |
+| PR #5 inspector account and professional profile | Integrated the PR's profile editor with protected account routing, verified identity checks, read-only role, full-name display, and row-returning saves. Removed partial auth-metadata writes and false success on missing/denied rows. |
+| Phone changes | Integrated real phone-change OTP with provider gating, resend cooldown, account checks, normalized phone comparison, and confirmed response checks. No demo OTP or anonymous fallback. |
+| Source preview and original filename | Integrated bounded JPEG previews and original filename persistence through the authenticated API. Reloaded reports expose the preview; active preview survives the server replacing the saved report object. Added database preview-size/type constraint in migration 006. |
+| PKCE callback | Integrated allowlisted destinations and non-cacheable redirects; numeric OTP remains supported. |
+| PR #3 measurement wiring | Integrated measurement propagation into reporting and the diagnostic pipeline. Copy evaluation fields to avoid mutation. Rule 7 returns explicit measurement context, handles invalid/non-finite heights, and preserves count-based non-applicability. |
+| PR #3 confidence-only PASS/FAIL and unverified thresholds | Corrected to REVIEW: confidence alone is not independent physical-measurement validation. The unverified legal threshold table is not used. |
+| Existing PR #5 dashboard/auth/database/PDF functions | Retained the corrected implementations already on local main; the original duplicate browser-side persistence and PDF implementations do not replace them. |
+| PR #5 OCR/mobile defaults, verification-threshold relaxation, headline PASS override, duplicate extractors | Still excluded. Replacing validated extraction or hiding physical-rule REVIEW/FAIL would regress the working pipeline. No dependency churn or blocking startup warm-up is introduced. |
+
+Validation: backend **117 passed + 33 subtests**; frontend **33 tests passed**, including profile/phone-change and preview validation; targeted preview retention rerun, lint and production build passed. Real sample `/health` and `/analyze`: HTTP 200, OCR success, five evidence images, overall REVIEW with 8 PASS / 0 FAIL / 1 REVIEW / 1 N/A. No conflict markers. Live phone/SMS, hosted migrations and hosted RLS remain unconfigured/unverified and deployment flags remain disabled. Apply migration 006 along with any unapplied prior migrations before enabling database features.
+
+This remains a code integration into local main; the earlier push was rejected by automatic approval review pending explicit authorization to publish to the GitHub destination. No remote publishing or live Supabase changes are represented as completed.

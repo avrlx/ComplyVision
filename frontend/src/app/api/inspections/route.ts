@@ -1,9 +1,10 @@
+import { validSourcePreview } from "@/lib/source-preview";
 import { createClient } from "@/lib/supabase/server";
 import { databaseEnabled, supabaseConfigured } from "@/lib/auth/config";
 import { isVerifiedUser } from "@/lib/auth/user";
 import { productName, validStoredReport } from "@/lib/inspection-record";
 
-const fields = "id,status,product_name,source_filename,report,created_at";
+const fields = "id,status,product_name,source_filename,source_image_data_url,report,created_at";
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 async function authorize(request: Request) {
   if (!databaseEnabled() || !supabaseConfigured()) return json({ error: "Saved history is not enabled for this deployment." }, 503);
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
   const { data, error } = await auth.client.from("inspections").select(fields).eq("user_id", auth.user.id)
     .order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + 19);
   if (error) return json({ error: "Saved history could not be loaded. Check the database migrations and access policies." }, 503);
-  if (data?.some(row => !validStoredReport(row.report) || row.status !== row.report.summary.overall_status))
+  if (data?.some(row => !validSourcePreview(row.source_image_data_url) || !validStoredReport(row.report) || row.status !== row.report.summary.overall_status))
     return json({ error: "Saved history contains an unsupported report. Contact the deployment administrator." }, 422);
   return json({ inspections: data ?? [], hasMore: data?.length === 20 });
 }
@@ -43,8 +44,10 @@ export async function POST(request: Request) {
   catch { return json({ error: "Invalid JSON report." }, 400); }
   if (!body || typeof body.id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.id) || !validStoredReport(body.report))
     return json({ error: "A valid inspection ID and canonical report are required." }, 400);
+  if (!validSourcePreview(body.source_image_data_url) || (body.source_filename !== undefined && (typeof body.source_filename !== "string" || body.source_filename.length > 255)))
+    return json({ error: "Invalid source filename or preview." }, 400);
   const row = { id: body.id, user_id: auth.user.id, report: body.report, status: body.report.summary.overall_status,
-    source_filename: body.report.image.filename, product_name: productName(body.report) };
+    source_filename: body.source_filename || body.report.image.filename, source_image_data_url: body.source_image_data_url ?? null, product_name: productName(body.report) };
   const { data, error } = await auth.client.from("inspections").insert(row).select(fields).single();
   if (!error) return json({ inspection: data }, 201);
   if (error.code === "23505") {

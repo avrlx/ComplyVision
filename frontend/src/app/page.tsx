@@ -9,5 +9,10 @@ export default async function Home() {
   if (!supabaseConfigured()) return <p>ComplyVision authentication needs configuration.</p>;
   const { data: { user }, error } = await (await createClient()).auth.getUser();
   if (error || !isVerifiedUser(user)) redirect("/login");
-  return <AnalysisWorkspace accountId={user.id} account={user.email || user.phone || "Signed in"} persistenceEnabled={databaseEnabled()} />;
+  let name = user.email || user.phone || "Signed in";
+  if (databaseEnabled()) {
+    const { data: profile } = await (await createClient()).from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+    if (typeof profile?.full_name === "string" && profile.full_name.trim()) name = profile.full_name;
+  }
+  return <AnalysisWorkspace accountId={user.id} account={name} persistenceEnabled={databaseEnabled()} />;
 }

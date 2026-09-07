@@ -1,4 +1,5 @@
 import csv
+import math
 import re
 from pathlib import Path
 
@@ -415,12 +416,17 @@ def evaluate_rule(rule, fields):
     elif field_name == "net_quantity_font_height":
 
         status, reason = evaluate_font_height_applicability(fields)
-
-        return {
-        "status": status,
-        "reason": reason,
-        "value": fields.get("net_quantity")
-        }
+        glyph = fields.get("net_quantity_font_height_measurement")
+        if status != "NOT_APPLICABLE" and isinstance(glyph, dict):
+            height = glyph.get("estimated_numeral_height_mm")
+            if isinstance(height, (int, float)) and not isinstance(height, bool) and math.isfinite(height) and height > 0:
+                reason = (f"Estimated numeral height {height:.2f} mm; physical measurement "
+                          "and applicable legal threshold require independent validation")
+            else:
+                reason = "Numeral-height measurement is missing or invalid; human review required"
+            status = "REVIEW"
+        return {"status": status, "reason": reason,
+                "value": glyph if isinstance(glyph, dict) else fields.get("net_quantity")}
     elif field_name == "mrp_netqty_contrast":
         status, reason = validate_mrp_netqty_contrast(value)
     else:

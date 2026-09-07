@@ -1,6 +1,7 @@
 import type { CanonicalReport, ReportStatus } from "@/types/report";
 export interface InspectionRecord {
   id: string; status: ReportStatus; product_name: string | null; source_filename: string;
+  source_image_data_url?: string | null;
   report: CanonicalReport; created_at: string;
 }
 const statuses = new Set(["PASS", "FAIL", "REVIEW", "NOT_APPLICABLE"]);

@@ -27,7 +27,7 @@ See [Supabase phone login](https://supabase.com/docs/guides/auth/phone-login) an
 
 ## 3. Database migrations and access checks
 
-Keep `COMPLYVISION_DATABASE_ENABLED=false` while provisioning. Apply the SQL files in `supabase/migrations/` in order using the Supabase SQL Editor or your migration workflow. If 001–004 have already been applied, apply only 005. Apply each migration once and keep the numbered order. The initial schema also uses restricted grants; 005 hardens deployments that previously used an earlier draft.
+Keep `COMPLYVISION_DATABASE_ENABLED=false` while provisioning. Apply the SQL files in `supabase/migrations/` in order using the Supabase SQL Editor or your migration workflow. If 001–004 have already been applied, apply 005 and 006. If 005 is already applied, apply only 006. Apply each migration once and keep the numbered order. The initial schema also uses restricted grants; 005 hardens deployments that previously used an earlier draft.
 
 The schema stores an immutable canonical report and its status under the authenticated user's ID. Profiles are created/backfilled automatically. Full-name and optional profile fields have column-level update grants; role, ID, and timestamps cannot be changed by clients. There is no administrative role editor. Reports have select/insert access only, RLS ownership checks, and an additional restriction against anonymous Auth sessions. `NOT_APPLICABLE` is supported.
 
@@ -53,3 +53,12 @@ The existing FastAPI `/health` and `/analyze` remain unchanged. Authentication p
 From `frontend`: `npm test`, `npm run lint`, and `npm run build`.
 
 Relevant tests cover real SQL ownership/privileges, provider gating, SMS verification, refreshed cookies on redirects, authenticated save authorization, save failure/retry/reload, and multi-page PDF output. Actual provider delivery and hosted RLS require the setup checks above.
+
+
+## PR #5 account and source-preview follow-up
+
+Signed-in users can open **Inspector account** from the workspace. With database access enabled, **Inspector Profile** edits professional details and shows the administrator-controlled role. A profile update must return the owned row before the UI claims success. Account changes cannot save to a different identity. Phone changes require an enabled provider and real `phone_change` OTP verification; email remains read-only in this interface.
+
+Inspections retain the original filename and an optional JPEG preview, downscaled to at most 900 pixels on the longest side and bounded to 2 MB. Reopened reports show **Uploaded package preview**. Preview generation is best-effort; the original analysis, canonical report, and evidence are not resized or altered. Migration 006 bounds preview data at the database layer as well. The preview is private under the existing report RLS policies.
+
+The auth callback supports PKCE links with destinations restricted to the workspace or account page. Numeric OTP remains the primary login flow.

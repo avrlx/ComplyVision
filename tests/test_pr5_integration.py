@@ -56,3 +56,27 @@ def test_analyzer_retains_non_core_rule_outcomes(tmp_path, failed_contrast, expe
     with patch('services.analyzer.run_ocr_ensemble', return_value=([], {})):
         report = analyzer.analyze_package(tmp_path / 'package.jpg')
     assert report['summary']['overall_status'] == expected
+
+
+@pytest.mark.parametrize('height', [3.0, 0.2, None, 'bad', float('nan'), float('inf')])
+def test_pr3_measurement_does_not_promote_unvalidated_rule7(height):
+    from rules.engine import evaluate_rule
+    rule = {'field_name': 'net_quantity_font_height'}
+    measurement = {'status': 'OK', 'estimated_numeral_height_mm': height, 'confidence': .99}
+    result = evaluate_rule(rule, {'net_quantity': {'value': 250, 'unit': 'ML'},
+                                  'net_quantity_font_height_measurement': measurement})
+    assert result['status'] == 'REVIEW'
+    assert result['value'] == measurement
+    count = evaluate_rule(rule, {'net_quantity': {'value': 2, 'unit': 'N'},
+                                'net_quantity_font_height_measurement': measurement})
+    assert count['status'] == 'NOT_APPLICABLE'
+
+
+def test_pr3_reporting_measurement_does_not_mutate_input_fields():
+    from reporting.report import build_rule_results
+    batch = _batch_result()
+    fields = deepcopy(batch['extracted_fields'])
+    before = deepcopy(fields)
+    results = build_rule_results(fields, {}, batch)
+    assert fields == before
+    assert next(row for row in results if row['rule_id'] == 'LM-R7-001')['status'] == 'REVIEW'
