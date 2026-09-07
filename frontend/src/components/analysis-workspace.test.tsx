@@ -7,6 +7,7 @@ import { analyzePackage, checkHealth, loadDemoSample } from "@/services/api";
 import { loadInspections, saveInspection } from "@/services/inspections";
 import { reportFixture } from "@/test/report-fixture";
 
+vi.mock("@/lib/source-preview", () => ({ createSourcePreview: vi.fn().mockResolvedValue("data:image/jpeg;base64,/9j/2Q==") }));
 vi.mock("@/services/inspections", () => ({ loadInspections: vi.fn(), saveInspection: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) } }) }));
 vi.mock("@/services/api", () => ({
@@ -151,9 +152,11 @@ describe("AnalysisWorkspace", () => {
     expect(await screen.findByText("Report not saved.")).toBeInTheDocument();
     expect(screen.getAllByText("REVIEW").length).toBeGreaterThan(0);
     const record = vi.mocked(saveInspection).mock.calls[0][0];
-    vi.mocked(saveInspection).mockResolvedValue(record);
+    vi.mocked(saveInspection).mockResolvedValue({ ...record, report: structuredClone(record.report) });
     await user.click(screen.getByRole("button", { name: "Retry saving" }));
     expect(vi.mocked(saveInspection).mock.calls[1][0].id).toBe(record.id);
+    await user.click(screen.getByText("Uploaded package preview"));
+    expect(screen.getByRole("img", { name: "Original uploaded package" })).toBeInTheDocument();
     expect(screen.queryByText(/report\(s\) not yet saved/)).not.toBeInTheDocument();
     view.unmount();
     vi.mocked(loadInspections).mockResolvedValue({ inspections: [record], hasMore: false });

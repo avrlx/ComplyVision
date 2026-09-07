@@ -316,7 +316,11 @@ def _evidence_confidence(evidence: list[dict[str, Any]]) -> float | None:
 def build_rule_results(
     fields: dict[str, Any], extracted: dict[str, Any], batch_result: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    compliance = evaluate_compliance(fields)
+    evaluation_fields = dict(fields)
+    glyph = batch_result.get("glyph_measurement")
+    if isinstance(glyph, dict):
+        evaluation_fields["net_quantity_font_height_measurement"] = glyph
+    compliance = evaluate_compliance(evaluation_fields)
     results = []
     for rule in compliance["results"]:
         status = rule["status"]

@@ -9,7 +9,7 @@ export async function loadInspections(userId: string, offset = 0): Promise<{ ins
 }
 export async function saveInspection(record: InspectionRecord, userId: string): Promise<InspectionRecord> {
   const body = await result(await fetch("/api/inspections", {
-    method: "POST", headers: { "Content-Type": "application/json", "X-ComplyVision-User": userId }, body: JSON.stringify({ id: record.id, report: record.report }),
+    method: "POST", headers: { "Content-Type": "application/json", "X-ComplyVision-User": userId }, body: JSON.stringify({ id: record.id, report: record.report, source_filename: record.source_filename, source_image_data_url: record.source_image_data_url }),
   }));
   return body.inspection;
 }

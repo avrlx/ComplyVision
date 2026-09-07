@@ -21,7 +21,7 @@ export async function proxy(request: NextRequest) {
   const { data: { user }, error } = await supabase.auth.getUser();
   const authenticated = !error && isVerifiedUser(user);
   let destination: NextResponse | undefined;
-  if (!authenticated && request.nextUrl.pathname === "/") {
+  if (!authenticated && ["/", "/account"].includes(request.nextUrl.pathname)) {
     destination = NextResponse.redirect(new URL("/login", request.url));
   } else if (authenticated && request.nextUrl.pathname === "/login") {
     destination = NextResponse.redirect(new URL("/", request.url));
@@ -33,4 +33,4 @@ export async function proxy(request: NextRequest) {
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
-export const config = { matcher: ["/", "/login", "/api/inspections/:path*", "/auth/signout"] };
+export const config = { matcher: ["/", "/account", "/login", "/api/inspections/:path*", "/auth/signout"] };
