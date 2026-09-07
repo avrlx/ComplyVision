@@ -22,20 +22,13 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string)
     doc.setFontSize(size); doc.setTextColor(...color);
     const lines = doc.splitTextToSize(safeText(value), width) as string[];
     const step = size * 0.47;
-    for (const line of lines) {
-      if (y + step > bottom) newPage();
-      doc.text(line, margin, y); y += step;
-    }
+    for (const line of lines) { if (y + step > bottom) newPage(); doc.text(line, margin, y); y += step; }
     y += 3;
   }
-  function heading(value: string) {
-    if (y + 23 > bottom) newPage();
-    y += 4; paragraph(value, 13, [8, 65, 88]);
-  }
+  function heading(value: string) { if (y + 23 > bottom) newPage(); y += 4; paragraph(value, 13, [8, 65, 88]); }
   const scalar = (item: unknown) => typeof item === "string" ? item : JSON.stringify(item) ?? "Unavailable";
   const value = (item: unknown): string => item && typeof item === "object" && !Array.isArray(item)
-    ? Object.entries(item).map(([key, entry]) => `${key.replaceAll("_", " ")}: ${scalar(entry)}`).join("\n")
-    : scalar(item);
+    ? Object.entries(item).map(([key, entry]) => `${key.replaceAll("_", " ")}: ${scalar(entry)}`).join("\n") : scalar(item);
   paragraph("ComplyVision", 23, [8, 65, 88]);
   paragraph("PACKAGE INSPECTION REPORT", 10);
   paragraph(`Source: ${report.image.filename}\nProcessed: ${report.image.processing_timestamp || "Timestamp unavailable"}\nSchema: ${report.report_version}`);
@@ -65,11 +58,8 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string)
   paragraph(value(ocrSummary), 8);
   for (const region of ocrEvidence ?? []) paragraph(value(region), 8);
   heading("Measurements and contrast");
-  for (const [name, details] of Object.entries(report.evidence)) {
-    paragraph(name.replaceAll("_", " "), 10); paragraph(value(details), 8);
-  }
+  for (const [name, details] of Object.entries(report.evidence)) { paragraph(name.replaceAll("_", " "), 10); paragraph(value(details), 8); }
   for (const [index, image] of (report.evidence_images ?? []).entries()) {
-    // No network requests for arbitrary image URLs embedded in report data.
     if (!/^data:image\/(png|jpeg);base64,/.test(image.data_url)) throw new Error("Unsupported evidence image. Export JSON to retain the original report.");
     const properties = doc.getImageProperties(image.data_url);
     const scale = Math.min(width / properties.width, 130 / properties.height);
@@ -89,7 +79,9 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string)
   }
   return doc;
 }
-export async function downloadCompliancePdf(report: CanonicalReport) {
+
+export async function downloadCompliancePdf(report: CanonicalReport, options?: unknown) {
+  void options;
   const response = await fetch("/fonts/DejaVuSans.ttf");
   if (!response.ok) throw new Error("The PDF font could not be loaded. Please retry.");
   const bytes = new Uint8Array(await response.arrayBuffer());

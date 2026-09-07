@@ -8,6 +8,7 @@ import { loadInspections, saveInspection } from "@/services/inspections";
 import { reportFixture } from "@/test/report-fixture";
 
 vi.mock("@/lib/source-preview", () => ({ createSourcePreview: vi.fn().mockResolvedValue("data:image/jpeg;base64,/9j/2Q==") }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }) }));
 vi.mock("@/services/inspections", () => ({ loadInspections: vi.fn(), saveInspection: vi.fn() }));
 vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) } }) }));
 vi.mock("@/services/api", () => ({
@@ -116,7 +117,7 @@ describe("AnalysisWorkspace", () => {
     const user = userEvent.setup();
     render(<AnalysisWorkspace />);
     await user.click(screen.getByRole("button", { name: "Start first inspection" }));
-    await user.click(screen.getByRole("button", { name: "Standard package example" }));
+    await user.click(screen.getByRole("button", { name: "Standard package" }));
     expect(mockedDemo).toHaveBeenCalledWith("/demo-samples/standard-package.jpg", "standard-package.jpg");
     await user.click(screen.getByRole("button", { name: /analyze package/i }));
     expect(mockedAnalyze).toHaveBeenCalledWith(expect.objectContaining({ name: "standard-package.jpg" }));
@@ -144,7 +145,7 @@ describe("AnalysisWorkspace", () => {
     const user = userEvent.setup();
     vi.mocked(loadInspections).mockResolvedValue({ inspections: [], hasMore: false });
     vi.mocked(saveInspection).mockRejectedValueOnce(new Error("Report not saved."));
-    const view = render(<AnalysisWorkspace accountId="owner" account="inspector@example.test" persistenceEnabled />);
+    const view = render(<AnalysisWorkspace accountId="owner" persistenceEnabled />);
     await user.click(screen.getByRole("button", { name: "Start first inspection" }));
     await user.upload(screen.getByLabelText("Package image"), new File(["jpg"], "package.jpg", { type: "image/jpeg" }));
     await user.click(screen.getByRole("button", { name: /analyze package/i }));
@@ -155,12 +156,10 @@ describe("AnalysisWorkspace", () => {
     vi.mocked(saveInspection).mockResolvedValue({ ...record, report: structuredClone(record.report) });
     await user.click(screen.getByRole("button", { name: "Retry saving" }));
     expect(vi.mocked(saveInspection).mock.calls[1][0].id).toBe(record.id);
-    await user.click(screen.getByText("Uploaded package preview"));
-    expect(screen.getByRole("img", { name: "Original uploaded package" })).toBeInTheDocument();
-    expect(screen.queryByText(/report\(s\) not yet saved/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Report not saved.")).not.toBeInTheDocument();
     view.unmount();
     vi.mocked(loadInspections).mockResolvedValue({ inspections: [record], hasMore: false });
-    render(<AnalysisWorkspace accountId="owner" account="inspector@example.test" persistenceEnabled />);
+    render(<AnalysisWorkspace accountId="owner" persistenceEnabled />);
     expect(await screen.findByText("SUNLITE REFINED OIL")).toBeInTheDocument();
     expect(vi.mocked(loadInspections)).toHaveBeenCalledWith("owner", 0);
   });

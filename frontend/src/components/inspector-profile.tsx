@@ -1,21 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { LoaderCircle, LogOut, ShieldCheck, UserCircle2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRouter } from "next/navigation";
-import { isVerifiedUser } from "@/lib/auth/user";
 import { createClient } from "@/lib/supabase/client";
-
-function normalizePhone(value: string): string {
-  return value.trim().replace(/[\s()-]/g, "");
-}
-
-function validPhone(value: string): boolean {
-  return /^\+[1-9]\d{7,14}$/.test(normalizePhone(value));
-}
+import { isVerifiedUser } from "@/lib/auth/user";
 
 type ProfileDetails = {
   fullName: string;
@@ -47,10 +39,8 @@ function inputClassName(): string {
   return "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-600 focus:ring-2 focus:ring-sky-100";
 }
 
-export function InspectorProfile({ accountId, phoneEnabled }: { accountId: string; phoneEnabled: boolean }) {
+export function InspectorProfile({ accountId, phoneEnabled = false }: { accountId: string; phoneEnabled?: boolean }) {
   const router = useRouter();
-  const [cooldown, setCooldown] = useState(0);
-  useEffect(() => { if (!cooldown) return; const timer = setTimeout(() => setCooldown(cooldown - 1), 1000); return () => clearTimeout(timer); }, [cooldown]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -58,9 +48,7 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
   const [details, setDetails] = useState<ProfileDetails>(emptyDetails);
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [role, setRole] = useState("unavailable");
-  const [phoneOtp, setPhoneOtp] = useState("");
-  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
+  const [role, setRole] = useState("inspector");
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +75,6 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
   }
 
   async function loadProfile() {
-    setPhoneOtpSent(false); setPhoneOtp("");
     setLoading(true);
     setError(null);
     setMessage(null);
@@ -96,10 +83,10 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
       const user = userData.user;
-      if (!isVerifiedUser(user) || user.id !== accountId) throw new Error("Your session changed. Reload and sign in again.");
+      if (!isVerifiedUser(user) || user.id !== accountId) throw new Error("Your session changed. Please sign in again.");
 
       setEmail(user.email ?? "");
-      setPhone(user.phone ? `+${user.phone.replace(/^\+/, "")}` : "");
+      setPhone(user.phone ?? "");
       setPhoneVerified(Boolean(user.phone_confirmed_at));
 
       const { data: profile, error: profileError } = await supabase
@@ -108,7 +95,6 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
         .eq("id", user.id)
         .maybeSingle();
       if (profileError) throw profileError;
-      if (!profile) throw new Error("Profile missing. Complete the database migrations before editing.");
 
       setDetails({
         fullName: profile?.full_name ?? (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : ""),
@@ -129,7 +115,6 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
       setLoading(false);
     }
   }
-
 
   async function saveProfile() {
     setSaving(true);
@@ -152,7 +137,7 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
 
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (userError) throw userError;
-      if (!isVerifiedUser(userData.user) || userData.user.id !== accountId) throw new Error("Your session changed. Reload and sign in again.");
+      if (!isVerifiedUser(userData.user) || userData.user.id !== accountId) throw new Error("Your session changed. Please sign in again.");
 
       const { error: profileError } = await supabase
         .from("profiles")
@@ -168,77 +153,18 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
           address: details.address.trim() || null,
           bio: details.bio.trim() || null,
         })
-        .eq("id", accountId).select("id").single();
+        .eq("id", userData.user.id)
+        .select("id")
+        .single();
       if (profileError) throw profileError;
+
+      const { error: authError } = await supabase.auth.updateUser({ data: { full_name: trimmedName } });
+      if (authError) throw authError;
 
       setDetails((current) => ({ ...current, fullName: trimmedName }));
       setMessage("Profile details saved successfully.");
     } catch (profileError) {
       setError(profileError instanceof Error ? profileError.message : "Could not update your profile.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function sendPhoneOtp() {
-    if (!phoneEnabled || saving || cooldown) return;
-    const normalized = normalizePhone(phone);
-    if (!validPhone(normalized)) {
-      setError("Enter a valid phone number in international format, for example +919876543210.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!isVerifiedUser(user) || user.id !== accountId) throw new Error("Your session changed. Reload before editing your phone.");
-      const { error: updateError } = await supabase.auth.updateUser({ phone: normalized });
-      if (updateError) throw updateError;
-      setPhone(normalized);
-      setPhoneOtp("");
-      setPhoneOtpSent(true);
-      setCooldown(60);
-      setPhoneVerified(false);
-      setMessage(`A verification OTP was sent to ${normalized}.`);
-    } catch (phoneError) {
-      setError(phoneError instanceof Error ? phoneError.message : "Could not send the phone verification OTP.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function verifyPhoneOtp() {
-    if (!phoneEnabled || saving) return;
-    const normalized = normalizePhone(phone);
-    if (!/^\d{6,8}$/.test(phoneOtp)) {
-      setError("Enter the OTP sent to your phone.");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const supabase = createClient();
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      if (!isVerifiedUser(currentUser) || currentUser.id !== accountId) throw new Error("Your session changed. Reload before verifying.");
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        phone: normalized,
-        token: phoneOtp,
-        type: "phone_change",
-      });
-      if (verifyError) throw verifyError;
-      if (!data.user || data.user.id !== accountId || data.user.phone?.replace(/^\+/, "") !== normalized.replace(/^\+/, "") || !data.user.phone_confirmed_at) throw new Error("Phone verification is incomplete.");
-
-      setPhoneVerified(true);
-      setPhoneOtpSent(false);
-      setPhoneOtp("");
-      setMessage("Phone number verified. You can now use phone OTP login for this account.");
-    } catch (phoneError) {
-      setError(phoneError instanceof Error ? phoneError.message : "Phone verification failed.");
     } finally {
       setSaving(false);
     }
@@ -251,7 +177,8 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
       const supabase = createClient();
       const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
       if (signOutError) throw signOutError;
-      router.replace("/login"); router.refresh();
+      router.replace("/login");
+      router.refresh();
     } catch (signOutError) {
       setError(signOutError instanceof Error ? signOutError.message : "Could not sign out.");
       setSigningOut(false);
@@ -279,7 +206,7 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
                     <ShieldCheck className="size-4" /> Account & profile
                   </div>
                   <CardTitle>Inspector Profile</CardTitle>
-                  <CardDescription className="mt-1">Complete your professional profile. Your registration email is read-only here, while your name, phone and profile details can be updated.</CardDescription>
+                  <CardDescription className="mt-1">Complete your professional profile. Your registration email is permanently read-only, while your name, phone and profile details can be updated.</CardDescription>
                 </div>
                 <button type="button" onClick={() => { setOpen(false); setError(null); setMessage(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Close profile">
                   <X className="size-5" />
@@ -379,18 +306,11 @@ export function InspectorProfile({ accountId, phoneEnabled }: { accountId: strin
 
                   <section className="rounded-xl border border-slate-200 p-4">
                     <p className="text-sm font-semibold text-slate-900">Phone authentication</p>
-                    {!phoneEnabled && <p className="text-sm text-amber-800">Phone authentication is not configured for this deployment.</p>}
-                    <p className="mt-1 text-xs leading-5 text-slate-500">Add or change the phone number used to sign in. A phone-change OTP is required before the new number becomes an authentication method.</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Phone OTP will be enabled after a Supabase phone provider and SMS provider are configured.</p>
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                      <input aria-label="Profile phone number" disabled={!phoneEnabled || saving || phoneOtpSent} type="tel" value={phone} onChange={(event) => { setPhone(event.target.value); setPhoneVerified(false); }} placeholder="+919876543210" className={`min-w-0 flex-1 ${inputClassName()}`} />
-                      <Button type="button" variant="outline" disabled={saving || !phoneEnabled || cooldown > 0} onClick={() => void sendPhoneOtp()}>{cooldown ? `Resend in ${cooldown}s` : "Send phone OTP"}</Button>
+                      <input aria-label="Profile phone number" type="tel" value={phone} disabled={!phoneEnabled} placeholder="Not configured" className={`min-w-0 flex-1 cursor-not-allowed opacity-60 ${inputClassName()}`} />
+                      <Button type="button" variant="outline" disabled={!phoneEnabled}>Send phone OTP</Button>
                     </div>
-                    {phoneOtpSent && (
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        <input value={phoneOtp} onChange={(event) => setPhoneOtp(event.target.value.replace(/\D/g, "").slice(0, 8))} inputMode="numeric" autoComplete="one-time-code" aria-label="Phone verification code" placeholder="Enter OTP" className={`min-w-0 flex-1 ${inputClassName()} text-center font-semibold tracking-[0.25em]`} />
-                        <Button type="button" disabled={saving} onClick={() => void verifyPhoneOtp()} className="bg-sky-950 hover:bg-sky-900">Verify phone</Button>
-                      </div>
-                    )}
                     {phone && <p className={`mt-2 text-xs ${phoneVerified ? "text-emerald-700" : "text-amber-700"}`}>{phoneVerified ? "✓ Phone number verified" : "Phone number not verified"}</p>}
                   </section>
 

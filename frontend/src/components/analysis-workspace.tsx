@@ -1,8 +1,9 @@
 "use client";
 
+import { InspectorProfile } from "@/components/inspector-profile";
 import { WorkspaceShell } from "@/components/workspace-shell";
 
-export function AnalysisWorkspace(props: { account?: string; accountId?: string; persistenceEnabled?: boolean }) {
+export function AnalysisWorkspace({ accountId, persistenceEnabled = false }: { accountId?: string; persistenceEnabled?: boolean }) {
   return (
     <>
       <style jsx global>{`
@@ -23,7 +24,8 @@ export function AnalysisWorkspace(props: { account?: string; accountId?: string;
         .dark main .bg-sky-50\\/60 p { color: oklch(0.88 0.09 215) !important; }
         .dark main .bg-sky-50\\/60 p + p { color: oklch(0.78 0.02 225) !important; }
       `}</style>
-      <WorkspaceShell {...props} />
+      <WorkspaceShell accountId={accountId} persistenceEnabled={persistenceEnabled} />
+      {accountId && <InspectorProfile accountId={accountId} phoneEnabled={false} />}
     </>
   );
 }

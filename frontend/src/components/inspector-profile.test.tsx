@@ -37,16 +37,12 @@ it("rejects saving under a switched account", async () => {
   expect(mocks.update).not.toHaveBeenCalled();
 });
 
-it("verifies a linked phone using the authenticated phone-change flow", async () => {
+it("keeps phone authentication visible but unavailable until configured", async () => {
   const user = userEvent.setup();
-  mocks.verifyOtp.mockResolvedValue({ error: null, data: { user: { id: "owner", phone: "919876543210", phone_confirmed_at: "2026-09-07" } } });
-  render(<InspectorProfile accountId="owner" phoneEnabled />);
+  render(<InspectorProfile accountId="owner" phoneEnabled={false} />);
   await user.click(screen.getByRole("button", { name: "Open inspector profile" }));
   await screen.findByDisplayValue("Inspector");
-  await user.type(screen.getByLabelText("Profile phone number"), "+919876543210");
-  await user.click(screen.getByRole("button", { name: "Send phone OTP" }));
-  await user.type(screen.getByLabelText("Phone verification code"), "123456");
-  await user.click(screen.getByRole("button", { name: "Verify phone" }));
-  expect(mocks.verifyOtp).toHaveBeenCalledWith({ phone: "+919876543210", token: "123456", type: "phone_change" });
-  expect(await screen.findByText("Phone number verified. You can now use phone OTP login for this account.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Profile phone number")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Send phone OTP" })).toBeDisabled();
+  expect(screen.getByText(/Supabase phone provider and SMS provider/)).toBeInTheDocument();
 });

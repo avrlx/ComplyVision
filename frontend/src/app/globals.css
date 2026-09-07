@@ -16,6 +16,7 @@
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
+  --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -218,7 +219,3 @@
 }
 
 .scan-line { animation: scan-line 2.4s ease-in-out infinite; }
-
-/* Explicit dark buttons must keep readable text when overriding the primary fill. */
-.dark button.bg-sky-950 { color: oklch(0.96 0.012 225); }
-.dark .text-sky-700 { color: oklch(0.78 0.09 215); }
