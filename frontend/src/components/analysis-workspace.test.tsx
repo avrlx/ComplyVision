@@ -4,8 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnalysisWorkspace } from "@/components/analysis-workspace";
 import { analyzePackage, checkHealth, loadDemoSample } from "@/services/api";
+import { loadInspections, saveInspection } from "@/services/inspections";
 import { reportFixture } from "@/test/report-fixture";
 
+vi.mock("@/services/inspections", () => ({ loadInspections: vi.fn(), saveInspection: vi.fn() }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }) } }) }));
 vi.mock("@/services/api", () => ({
   analyzePackage: vi.fn(),
   checkHealth: vi.fn(),
@@ -134,6 +137,29 @@ describe("AnalysisWorkspace", () => {
     render(<AnalysisWorkspace />);
     expect(screen.getByRole("button", { name: "Start first inspection" })).toBeInTheDocument();
     expect(screen.queryByText("session-package.jpg")).not.toBeInTheDocument();
+  });
+
+  it("retains a failed save, retries with the same ID, and reloads saved history", async () => {
+    const user = userEvent.setup();
+    vi.mocked(loadInspections).mockResolvedValue({ inspections: [], hasMore: false });
+    vi.mocked(saveInspection).mockRejectedValueOnce(new Error("Report not saved."));
+    const view = render(<AnalysisWorkspace accountId="owner" account="inspector@example.test" persistenceEnabled />);
+    await user.click(screen.getByRole("button", { name: "Start first inspection" }));
+    await user.upload(screen.getByLabelText("Package image"), new File(["jpg"], "package.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: /analyze package/i }));
+    await screen.findByText("Overall compliance status");
+    expect(await screen.findByText("Report not saved.")).toBeInTheDocument();
+    expect(screen.getAllByText("REVIEW").length).toBeGreaterThan(0);
+    const record = vi.mocked(saveInspection).mock.calls[0][0];
+    vi.mocked(saveInspection).mockResolvedValue(record);
+    await user.click(screen.getByRole("button", { name: "Retry saving" }));
+    expect(vi.mocked(saveInspection).mock.calls[1][0].id).toBe(record.id);
+    expect(screen.queryByText(/report\(s\) not yet saved/)).not.toBeInTheDocument();
+    view.unmount();
+    vi.mocked(loadInspections).mockResolvedValue({ inspections: [record], hasMore: false });
+    render(<AnalysisWorkspace accountId="owner" account="inspector@example.test" persistenceEnabled />);
+    expect(await screen.findByText("SUNLITE REFINED OIL")).toBeInTheDocument();
+    expect(vi.mocked(loadInspections)).toHaveBeenCalledWith("owner", 0);
   });
 
 });

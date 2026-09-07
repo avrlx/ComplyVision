@@ -1,0 +1,32 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, expect, it, vi } from "vitest";
+import { LoginForm } from "./login-form";
+const mocks = vi.hoisted(() => ({ send: vi.fn(), verify: vi.fn(), replace: vi.fn(), refresh: vi.fn() }));
+vi.mock("@/lib/supabase/client", () => ({ createClient: () => ({ auth: { signInWithOtp: mocks.send, verifyOtp: mocks.verify } }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mocks.replace, refresh: mocks.refresh }) }));
+beforeEach(() => { mocks.send.mockResolvedValue({ error: null }); mocks.verify.mockResolvedValue({ error: new Error("Invalid"), data: {} }); });
+it("keeps an unconfigured phone provider disabled", () => {
+  render(<LoginForm providers={{ email: true, phone: false, signup: true, unavailable: false }} />);
+  expect(screen.getByRole("button", { name: "Phone OTP" })).toBeDisabled();
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+it("requires real SMS verification and never accepts a demo code or anonymous user", async () => {
+  const user = userEvent.setup();
+  render(<LoginForm providers={{ email: true, phone: true, signup: true, unavailable: false }} />);
+  await user.click(screen.getByRole("button", { name: "Phone OTP" }));
+  await user.type(screen.getByLabelText(/Phone number/), "+919876543210");
+  await user.click(screen.getByRole("button", { name: "Send code" }));
+  expect(mocks.send).toHaveBeenCalledWith({ phone: "+919876543210", options: { shouldCreateUser: false } });
+  await user.type(screen.getByLabelText("Verification code"), "123456");
+  await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+  expect(mocks.verify).toHaveBeenCalledWith({ phone: "+919876543210", token: "123456", type: "sms" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("invalid or expired");
+  expect(mocks.replace).not.toHaveBeenCalled();
+  mocks.verify.mockResolvedValue({ error: null, data: { session: {}, user: { is_anonymous: true, phone_confirmed_at: "2026-09-07" } } });
+  await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+  expect(mocks.replace).not.toHaveBeenCalled();
+  mocks.verify.mockResolvedValue({ error: null, data: { session: {}, user: { is_anonymous: false, phone_confirmed_at: "2026-09-07" } } });
+  await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+  expect(mocks.replace).toHaveBeenCalledWith("/");
+});

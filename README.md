@@ -22,7 +22,7 @@ The Python backend is the single source of truth. The frontend only validates ob
 ## Prerequisites
 
 - Python 3.12 and a project virtual environment at `.venv/`
-- Node.js 20 or newer
+- Node.js 22 or newer
 - npm
 
 ## Backend setup
@@ -87,7 +87,7 @@ Uploads and intermediate overlays use request-isolated temporary storage and are
 
 ## Dashboard behavior
 
-The workspace provides a dashboard, session history, findings, analytics, a read-only rule catalog, and JSON/Markdown exports. Reports are kept only in browser memory for the current page session; reloading clears them. No Supabase configuration is needed.
+The workspace provides a dashboard, findings, analytics, a read-only rule catalog, and PDF/JSON/Markdown exports. By default, reports stay in browser memory until reload. Optional Supabase phone/email OTP and personal saved history are available behind explicit deployment switches. Follow [authentication and database setup](docs/AUTH_DATABASE_SETUP.md) before enabling them. Phone/SMS and hosted database access require provisioning and live verification.
 
 The inspection flow provides three states:
 
@@ -95,7 +95,7 @@ The inspection flow provides three states:
 2. A non-streaming pipeline visualization while the single `POST /analyze` request runs.
 3. A responsive compliance dashboard showing summary counts, declarations, all rule results, OCR evidence, image quality, warnings, contrast evidence, and numeral-height evidence.
 
-Relevant declaration and rule cards expose a **View evidence** action for request-generated declaration crops, LM-R7 numeral-height overlays, and LM-R9 contrast overlays. Cards without visual evidence do not show an empty action. Reports can be downloaded as canonical JSON or a presentation-only Markdown summary.
+Relevant declaration and rule cards expose a **View evidence** action for request-generated declaration crops, LM-R7 numeral-height overlays, and LM-R9 contrast overlays. Cards without visual evidence do not show an empty action. Reports can be downloaded as canonical JSON, a Markdown summary, or a paginated PDF with visual evidence.
 
 Two bundled demo selectors use `samples/1.jpg` and `samples/3.jpg`. Selecting one loads the actual image file and sends it through the same `POST /analyze` request as a user upload; no report response is hardcoded in the frontend.
 
