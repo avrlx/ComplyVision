@@ -30,3 +30,19 @@ it("requires real SMS verification and never accepts a demo code or anonymous us
   await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
   expect(mocks.replace).toHaveBeenCalledWith("/");
 });
+it("sends an email link to the PKCE callback and supports email-code verification", async () => {
+  const user = userEvent.setup();
+  render(<LoginForm providers={{ email: true, phone: false, signup: true, unavailable: false }} />);
+  expect(screen.getByLabelText("Phone number")).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: "Create a new account" }));
+  await user.type(screen.getByLabelText("Full name"), "Test Inspector");
+  await user.type(screen.getByLabelText("Email address"), "inspector@example.test");
+  await user.click(screen.getByRole("button", { name: "Send sign-in email" }));
+  expect(mocks.send).toHaveBeenCalledWith({ email: "inspector@example.test", options: { shouldCreateUser: true, data: { full_name: "Test Inspector" }, emailRedirectTo: `${window.location.origin}/auth/callback` } });
+  expect(screen.getByText(/sign-in link or code/)).toBeInTheDocument();
+  mocks.verify.mockResolvedValue({ error: null, data: { session: {}, user: { is_anonymous: false, email_confirmed_at: "2026-09-07" } } });
+  await user.type(screen.getByLabelText("Verification code"), "123456");
+  await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+  expect(mocks.verify).toHaveBeenCalledWith({ email: "inspector@example.test", token: "123456", type: "email" });
+  expect(mocks.replace).toHaveBeenCalledWith("/");
+});

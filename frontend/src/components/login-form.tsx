@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 
 export function LoginForm({ providers }: { providers: AuthProviders }) {
   const router = useRouter();
-  const [method, setMethod] = useState<"email" | "phone">(providers.email ? "email" : "phone");
+  const [method, setMethod] = useState<"email" | "phone">("email");
   const [signup, setSignup] = useState(false);
   const [contact, setContact] = useState("");
   const [fullName, setFullName] = useState("");
@@ -34,7 +34,7 @@ export function LoginForm({ providers }: { providers: AuthProviders }) {
     try {
       const auth = createClient().auth;
       const options = { shouldCreateUser: signup && providers.signup, ...(signup ? { data: { full_name: fullName.trim() } } : {}) };
-      const { error } = await auth.signInWithOtp(method === "phone" ? { phone: normalized, options } : { email: normalized, options });
+      const { error } = await auth.signInWithOtp(method === "phone" ? { phone: normalized, options } : { email: normalized, options: { ...options, emailRedirectTo: `${window.location.origin}/auth/callback` } });
       if (error) throw new Error("Could not send a code. Check your details, account registration, and provider setup, then try again later.");
       setSent(true); setCooldown(60);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not send a code."); }
@@ -57,18 +57,19 @@ export function LoginForm({ providers }: { providers: AuthProviders }) {
   return <div className="space-y-5">
     {providers.unavailable && <p role="alert">Authentication is unavailable. Check the Supabase configuration and try reloading.</p>}
     <div className="flex gap-2">
-      {(["email", "phone"] as const).map(value => <Button key={value} variant={method === value ? "default" : "outline"} disabled={busy || sent || !providers[value]} onClick={() => { setMethod(value); setContact(""); setError(""); }}>{value === "phone" ? "Phone OTP" : "Email OTP"}</Button>)}
+      {(["email", "phone"] as const).map(value => <Button key={value} variant={method === value ? "default" : "outline"} disabled={busy || sent || !providers[value]} onClick={() => { setMethod(value); setContact(""); setError(""); }}>{value === "phone" ? "Phone OTP" : "Email sign-in"}</Button>)}
     </div>
-    {!providers.phone && <p className="text-sm text-slate-500">Phone OTP is not available until the Supabase Phone provider and SMS delivery are configured.</p>}
+    {!providers.phone && <p className="text-sm text-slate-500">Phone sign-in is coming soon. Use email to sign in.</p>}
     <form onSubmit={sent ? verify : sendCode} className="space-y-4">
       {!sent && providers.signup && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={signup} disabled={busy} onChange={e => setSignup(e.target.checked)} />Create a new account</label>}
       {signup && !sent && <label className="block text-sm">Full name<input className="mt-1 w-full rounded border p-3" autoComplete="name" maxLength={120} required value={fullName} disabled={busy} onChange={e => setFullName(e.target.value)} /></label>}
       <label className="block text-sm">{method === "phone" ? "Phone number (with country code)" : "Email address"}<input className="mt-1 w-full rounded border p-3" type={method === "phone" ? "tel" : "email"} autoComplete={method === "phone" ? "tel" : "email"} required maxLength={254} disabled={sent || busy || !enabled} value={contact} onChange={e => setContact(e.target.value)} /></label>
-      {sent && <><p className="text-sm">Enter the code sent to {contact}. Keep this page open.</p><label className="block text-sm">Verification code<input className="mt-1 w-full rounded border p-3" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" required maxLength={10} value={token} disabled={busy} onChange={e => setToken(e.target.value)} /></label></>}
-      <Button className="w-full" disabled={busy || !enabled || (!sent && cooldown > 0)} type="submit">{busy ? "Please wait…" : sent ? "Verify and sign in" : "Send code"}</Button>
+      {sent && <><p className="text-sm">{method === "email" ? `Check ${contact} for a sign-in link or code. Open the link in this browser, or enter the code below.` : `Enter the code sent to ${contact}. Keep this page open.`}</p><label className="block text-sm">Verification code<input className="mt-1 w-full rounded border p-3" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" required maxLength={10} value={token} disabled={busy} onChange={e => setToken(e.target.value)} /></label></>}
+      <Button className="w-full" disabled={busy || !enabled || (!sent && cooldown > 0)} type="submit">{busy ? "Please wait…" : sent ? "Verify and sign in" : method === "email" ? "Send sign-in email" : "Send code"}</Button>
       {sent && <div className="flex gap-3"><Button variant="outline" type="button" disabled={busy || cooldown > 0} onClick={() => void sendCode()}>{cooldown ? `Resend in ${cooldown}s` : "Resend code"}</Button><Button variant="outline" type="button" disabled={busy} onClick={() => { setSent(false); setToken(""); setError(""); }}>Change contact</Button></div>}
       {!sent && cooldown > 0 && <p className="text-sm">Please wait {cooldown}s before requesting another code.</p>}
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     </form>
+    {!providers.phone && <section className="rounded-lg border border-slate-200 bg-slate-50 p-4" aria-label="Phone sign-in coming soon"><label className="block text-sm font-medium">Phone number<input type="tel" disabled placeholder="Phone sign-in is not available yet" className="mt-2 w-full rounded border bg-slate-100 p-3 text-sm" /></label><p className="mt-2 text-xs text-slate-500">Optional phone authentication will be available later. No number is sent or saved here.</p></section>}
   </div>;
 }

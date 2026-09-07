@@ -9,8 +9,8 @@ In `frontend/.env.local` (or the hosting environment), set `NEXT_PUBLIC_SUPABASE
 In Supabase Authentication:
 
 1. Enable Email. Configure production SMTP and the desired signup policy.
-2. Configure the **Magic Link** email template to display `{{ .Token }}`. Also include `{{ .Token }}` in the **Confirm signup** template for new accounts. This UI verifies a numeric email code; it does not use a magic-link callback.
-3. Set the Site URL to your frontend origin. Configure OTP expiry, rate limits, and your email/SMS delivery limits. The UI adds a 60-second resend cooldown; Supabase must enforce abuse limits independently.
+2. For numeric codes, optionally configure the **Magic Link** and **Confirm signup** email templates to display `{{ .Token }}`. The UI accepts either the default email sign-in link or a numeric OTP. Templates containing `{{ .ConfirmationURL }}` can remain unchanged when using links.
+3. Set the Site URL to your frontend origin (`http://localhost:3000` locally) and allow `http://localhost:3000/auth/callback` in Authentication → URL Configuration → Redirect URLs. Add the equivalent callback for each deployed origin. Configure OTP expiry, rate limits, and your email/SMS delivery limits. The UI adds a 60-second resend cooldown; Supabase must enforce abuse limits independently.
 4. Disable anonymous sign-ins unless another application on the same project needs them. This app rejects anonymous users even if that Supabase feature is enabled.
 5. Set `COMPLYVISION_AUTH_ENABLED=true`, rebuild/restart the frontend, and validate sign-in with a real test account. Auth failures deny workspace access. With the flag false, the app explicitly remains a session workspace.
 
@@ -19,15 +19,15 @@ Sign-in uses an existing account by default. Select **Create a new account** to 
 ## 2. Phone OTP (not configured yet)
 
 1. In Authentication → Sign In / Providers → Phone, configure an SMS provider supported by Supabase (for example Twilio), including its sender and delivery requirements for your intended countries. Enter provider credentials only in Supabase's secure dashboard.
-2. Enable the Phone provider. Set the SMS template to include the OTP token, and configure expiry/rate limits. Complete any sender registration required by the provider.
-3. Reload `/login`. The page reads Supabase's public auth settings. Phone OTP stays disabled when the provider is off or its settings cannot be checked.
+2. When phone support is intentionally activated in the future, set `COMPLYVISION_PHONE_AUTH_ENABLED=true` and enable the Phone provider. Set the SMS template to include the OTP token, and configure expiry/rate limits. Complete any sender registration required by the provider.
+3. Reload `/login`. The phone deployment switch defaults to false, keeping the phone section disabled. The page reads Supabase's public auth settings. Phone OTP stays disabled when the provider is off or its settings cannot be checked.
 4. Using your own test phone, request a code with an international number (e.g. `+91…`), verify it, sign out, and sign back in. Test an expired/wrong code and resend limits. Actual SMS delivery has **not** been tested in this change; toggling the provider alone does not prove delivery works.
 
 See [Supabase phone login](https://supabase.com/docs/guides/auth/phone-login) and [email OTP](https://supabase.com/docs/guides/auth/auth-email-passwordless).
 
 ## 3. Database migrations and access checks
 
-Keep `COMPLYVISION_DATABASE_ENABLED=false` while provisioning. Apply the SQL files in `supabase/migrations/` in order using the Supabase SQL Editor or your migration workflow. If 001–004 have already been applied, apply 005 and 006. If 005 is already applied, apply only 006. Apply each migration once and keep the numbered order. The initial schema also uses restricted grants; 005 hardens deployments that previously used an earlier draft.
+Keep `COMPLYVISION_DATABASE_ENABLED=false` while provisioning. For SQL Editor setup, run the complete `supabase/setup.sql` file; it installs the schema and permissions in one transaction and supports rerunning. Alternatively, apply the SQL files in `supabase/migrations/` in order using your migration workflow. If 001–004 have already been applied, apply 005 and 006. If 005 is already applied, apply only 006. Apply each migration once and keep the numbered order. The initial schema also uses restricted grants; 005 hardens deployments that previously used an earlier draft.
 
 The schema stores an immutable canonical report and its status under the authenticated user's ID. Profiles are created/backfilled automatically. Full-name and optional profile fields have column-level update grants; role, ID, and timestamps cannot be changed by clients. There is no administrative role editor. Reports have select/insert access only, RLS ownership checks, and an additional restriction against anonymous Auth sessions. `NOT_APPLICABLE` is supported.
 
@@ -62,3 +62,10 @@ Signed-in users can open **Inspector account** from the workspace. With database
 Inspections retain the original filename and an optional JPEG preview, downscaled to at most 900 pixels on the longest side and bounded to 2 MB. Reopened reports show **Uploaded package preview**. Preview generation is best-effort; the original analysis, canonical report, and evidence are not resized or altered. Migration 006 bounds preview data at the database layer as well. The preview is private under the existing report RLS policies.
 
 The auth callback supports PKCE links with destinations restricted to the workspace or account page. Numeric OTP remains the primary login flow.
+
+
+## Current local configuration
+
+The supplied project URL and publishable key are in ignored `frontend/.env.local`. Local email authentication is enabled. Supabase's public settings returned HTTP 200 and confirmed email enabled, phone disabled. Phone remains explicitly disabled in the app even if the provider later changes. Restart the frontend after changing environment settings.
+
+The database code is installed, but the publishable key cannot run administrative SQL. Run `supabase/setup.sql` in this project's SQL Editor and verify private access with test accounts, then set `COMPLYVISION_DATABASE_ENABLED=true` locally and restart. Until then, signed-in users can analyze images and export reports with session history. Actual email delivery still requires signing in with your own email; no email or SMS was sent during automated verification.

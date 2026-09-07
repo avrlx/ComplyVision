@@ -72,3 +72,9 @@ Fetched current remote main and both PR heads before review. PR #5 remains `7cce
 Validation: backend **117 passed + 33 subtests**; frontend **33 tests passed**, including profile/phone-change and preview validation; targeted preview retention rerun, lint and production build passed. Real sample `/health` and `/analyze`: HTTP 200, OCR success, five evidence images, overall REVIEW with 8 PASS / 0 FAIL / 1 REVIEW / 1 N/A. No conflict markers. Live phone/SMS, hosted migrations and hosted RLS remain unconfigured/unverified and deployment flags remain disabled. Apply migration 006 along with any unapplied prior migrations before enabling database features.
 
 This remains a code integration into local main; the earlier push was rejected by automatic approval review pending explicit authorization to publish to the GitHub destination. No remote publishing or live Supabase changes are represented as completed.
+
+## Email-only local activation (2026-09-07)
+
+At the user's request, applied their public Supabase settings to ignored `frontend/.env.local` and enabled local authentication. The actual server configuration successfully read provider settings: email enabled, phone disabled, signup allowed. Added an explicit phone deployment switch (false) and a visible disabled phone-number section. Email supports the provider's default PKCE sign-in link as well as numeric OTP; invalid callback links display a retry message. No email/SMS was sent, so delivery is not claimed as verified.
+
+Frontend: 37 tests, lint and production build passed. Added `supabase/setup.sql`, generated from migrations by `scripts/build_supabase_setup.py`; local PostgreSQL tests apply it twice before checking account isolation and grants. The publishable key cannot apply hosted DDL, so live persistence remains disabled until the SQL is run and hosted access is verified. The public credentials file remains ignored and is not committed.

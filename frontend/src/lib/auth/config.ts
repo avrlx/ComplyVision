@@ -19,7 +19,7 @@ export async function getAuthProviders(): Promise<AuthProviders> {
     });
     if (!response.ok) return unavailable;
     const settings = await response.json();
-    return { email: settings.external?.email === true, phone: settings.external?.phone === true,
+    return { email: settings.external?.email === true, phone: process.env.COMPLYVISION_PHONE_AUTH_ENABLED === "true" && settings.external?.phone === true,
       signup: settings.disable_signup === false, unavailable: false };
   } catch { return unavailable; }
 }

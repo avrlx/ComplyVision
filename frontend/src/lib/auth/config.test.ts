@@ -12,3 +12,10 @@ it("requires explicit deployment activation and fails closed on provider lookup 
   vi.mocked(fetch).mockRejectedValue(new Error("Offline"));
   expect(await getAuthProviders()).toEqual({ email: false, phone: false, signup: false, unavailable: true });
 });
+it("keeps phone disabled by deployment choice even when Supabase enables it", async () => {
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.example");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "public-test-key");
+  vi.stubEnv("COMPLYVISION_PHONE_AUTH_ENABLED", "false");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ external: { email: true, phone: true }, disable_signup: false }))));
+  expect((await getAuthProviders()).phone).toBe(false);
+});

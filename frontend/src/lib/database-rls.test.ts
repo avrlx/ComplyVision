@@ -16,6 +16,10 @@ beforeAll(async () => {
     grant execute on function auth.uid(), auth.jwt() to anon, authenticated;`);
   const root = new URL("../../../supabase/migrations/", import.meta.url);
   for (const file of readdirSync(root).filter(name => name.endsWith(".sql")).sort()) await db.exec(readFileSync(new URL(file, root), "utf8"));
+  // The SQL Editor bundle also supports deployments with existing migrations.
+  const setup = readFileSync(new URL("../../../supabase/setup.sql", import.meta.url), "utf8");
+  await db.exec(setup);
+  await db.exec(setup);
   await db.query("insert into auth.users values ($1, '{\"full_name\":\"Alice\",\"role\":\"admin\"}'), ($2, '{}')", [alice, bob]);
 }, 30000);
 afterAll(async () => { await db?.close(); });
