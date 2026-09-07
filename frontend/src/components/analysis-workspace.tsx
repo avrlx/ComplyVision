@@ -2,7 +2,7 @@
 
 import { WorkspaceShell } from "@/components/workspace-shell";
 
-export function AnalysisWorkspace() {
+export function AnalysisWorkspace(props: { account?: string; accountId?: string; persistenceEnabled?: boolean }) {
   return (
     <>
       <style jsx global>{`
@@ -23,7 +23,7 @@ export function AnalysisWorkspace() {
         .dark main .bg-sky-50\\/60 p { color: oklch(0.88 0.09 215) !important; }
         .dark main .bg-sky-50\\/60 p + p { color: oklch(0.78 0.02 225) !important; }
       `}</style>
-      <WorkspaceShell />
+      <WorkspaceShell {...props} />
     </>
   );
 }

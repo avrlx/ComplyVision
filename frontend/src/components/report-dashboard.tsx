@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { PdfExportButton } from "@/components/pdf-export-button";
 import { downloadReport } from "@/lib/report-export";
 import type {
   CanonicalReport,
@@ -423,6 +424,7 @@ export function ReportDashboard({ report, onReset }: { report: CanonicalReport; 
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <PdfExportButton report={report} />
             <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => downloadReport(report, "json")}><Download /> Export JSON</Button>
             <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => downloadReport(report, "md")}><Download /> Export Markdown</Button>
             <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onReset}><RotateCcw /> Analyze another image</Button>
