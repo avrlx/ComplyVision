@@ -12,6 +12,9 @@ from reporting.report import build_package_report
 from services.declaration_extractor import add_enhanced_report_fields, enhance_extracted_fields
 from services.evidence import build_evidence_images, scrub_local_paths
 from services.mrp_extractor import correct_mrp
+# Kept as a compatibility symbol for existing tests/mocks. The live path does
+# not call it; production inspection is strictly single-pass OCR.
+from services.ocr_ensemble import run_ocr_ensemble
 
 
 class PackageAnalysisError(RuntimeError):
