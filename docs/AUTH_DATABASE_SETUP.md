@@ -40,7 +40,7 @@ Local tests execute all migrations in real PostgreSQL (PGlite) with two authenti
 
 Then set `COMPLYVISION_DATABASE_ENABLED=true`, restart, analyze a sample, confirm there is no “not yet saved” indicator, reload and reopen the report. Sign out and verify that another account cannot see it. Never use a service-role key to test RLS; it bypasses RLS.
 
-History loads 20 records per page. **Load older reports** fetches further pages. Failures keep the analysis in memory with a visible error and retry; retry uses the same ID and never overwrites the original record. Export before leaving if a report is unsaved. Records are user-owned decision-support data, not signed certificates or tamper-proof evidence of backend execution. JSON export retains the canonical content.
+The workspace fetches history from the database in batches of 20 until all pages are loaded, so dashboard totals include older inspections. Loading and database errors are shown before rendering dashboard counts. Failures keep the analysis in memory with a visible error and retry; retry uses the same ID and never overwrites the original record. Export before leaving if a report is unsaved. Records are user-owned decision-support data, not signed certificates or tamper-proof evidence of backend execution. JSON export retains the canonical content.
 
 ## 4. PDF export and deployment boundaries
 

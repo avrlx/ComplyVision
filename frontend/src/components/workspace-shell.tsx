@@ -238,12 +238,22 @@ export function WorkspaceShell({ accountId, persistenceEnabled = false }: { acco
   }, []);
 
   const refreshData = useCallback(async () => {
-    if (!persistenceEnabled || !accountId) { setDataLoading(false); return; }
+    if (!persistenceEnabled || !accountId) {
+      setDataError(accountId ? "Database history is disabled. Enable COMPLYVISION_DATABASE_ENABLED in the frontend environment and restart the server." : null);
+      setDataLoading(false);
+      return;
+    }
     setDataLoading(true);
     setDataError(null);
     try {
-      const history = await loadInspections(accountId, 0);
-      setInspections(history.inspections);
+      const records: InspectionRecord[] = [];
+      let hasMore = true;
+      while (hasMore) {
+        const history = await loadInspections(accountId, records.length);
+        records.push(...history.inspections);
+        hasMore = history.hasMore && history.inspections.length > 0;
+      }
+      setInspections(Array.from(new Map(records.map(record => [record.id, record])).values()));
       try { setProfile(await fetchProfile()); } catch { setProfile(null); }
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Inspection history could not be loaded.");
@@ -257,18 +267,18 @@ export function WorkspaceShell({ accountId, persistenceEnabled = false }: { acco
   useEffect(() => { if (!analyzing) return; const timer = window.setInterval(() => setStage((value) => Math.min(value + 1, PIPELINE_STAGES.length - 1)), 850); return () => window.clearInterval(timer); }, [analyzing]);
 
   const selectFile = useCallback((file: File) => { const error = fileError(file); setValidationError(error); setRequestError(null); setReport(null); setSelectedFile(error ? null : file); }, []);
-  const analyze = async () => { if (!selectedFile || analyzing) return; setAnalyzing(true); setStage(0); setRequestError(null); setSaveError(null); try { const nextReport = await analyzePackage(selectedFile); const record: InspectionRecord = { id: crypto.randomUUID(), status: nextReport.summary.overall_status, product_name: productName(nextReport), source_filename: selectedFile.name, source_image_data_url: await createSourcePreview(selectedFile), report: nextReport, created_at: new Date().toISOString() }; setInspections((current) => [record, ...current]); setReport(nextReport); if (persistenceEnabled && accountId) { try { const saved = await saveInspection(record, accountId); setInspections((current) => current.map((item) => item.id === record.id ? saved : item)); } catch (error) { setPendingSave(record); setSaveError(error instanceof Error ? error.message : "Report could not be saved."); } } } catch (error) { setRequestError(error instanceof Error ? error.message : "Analysis could not be completed."); } finally { setAnalyzing(false); } };
-  const retrySave = async () => { if (!pendingSave || !accountId) return; setSaveError(null); try { const saved = await saveInspection(pendingSave, accountId); setInspections((current) => current.map((item) => item.id === pendingSave.id ? saved : item)); setPendingSave(null); } catch (error) { setSaveError(error instanceof Error ? error.message : "Report could not be saved."); } };
+  const analyze = async () => { if (!selectedFile || analyzing) return; setAnalyzing(true); setStage(0); setRequestError(null); setSaveError(null); try { const nextReport = await analyzePackage(selectedFile); const record: InspectionRecord = { id: crypto.randomUUID(), status: nextReport.summary.overall_status, product_name: productName(nextReport), source_filename: selectedFile.name, source_image_data_url: await createSourcePreview(selectedFile), report: nextReport, created_at: new Date().toISOString() }; if (!persistenceEnabled) setInspections((current) => [record, ...current]); setReport(nextReport); if (persistenceEnabled && accountId) { try { const saved = await saveInspection(record, accountId); setInspections((current) => [saved, ...current.filter((item) => item.id !== saved.id)]); } catch (error) { setPendingSave(record); setSaveError(error instanceof Error ? error.message : "Report could not be saved."); } } } catch (error) { setRequestError(error instanceof Error ? error.message : "Analysis could not be completed."); } finally { setAnalyzing(false); } };
+  const retrySave = async () => { if (!pendingSave || !accountId) return; setSaveError(null); try { const saved = await saveInspection(pendingSave, accountId); setInspections((current) => [saved, ...current.filter((item) => item.id !== saved.id)]); setPendingSave(null); } catch (error) { setSaveError(error instanceof Error ? error.message : "Report could not be saved."); } };
   const selectDemo = async (path: string, filename: string) => { setRequestError(null); try { selectFile(await loadDemoSample(path, filename)); } catch (error) { setRequestError(error instanceof Error ? error.message : "The demo image could not be loaded."); } };
   const reset = () => { setSelectedFile(null); setValidationError(null); setRequestError(null); setReport(null); setStage(0); };
   const goNew = () => { reset(); setView("new-inspection"); };
   const openReport = (nextReport: CanonicalReport) => { setReport(nextReport); setSelectedFile(null); setRequestError(null); setValidationError(null); setView("new-inspection"); };
 
   let content: React.ReactNode;
-  if (view === "dashboard") content = <DashboardView inspections={inspections} onNavigate={setView} onOpenReport={openReport} onNew={goNew} />;
-  else if (view === "new-inspection") content = analyzing ? <AnalysisProgress stage={stage} /> : report ? <>{saveError && <Alert variant="destructive" className="mx-auto mb-5 max-w-5xl bg-white"><AlertTriangle /><AlertTitle>Report not saved</AlertTitle><AlertDescription className="flex items-center justify-between gap-3"><span>{saveError}</span><Button variant="outline" size="sm" onClick={() => void retrySave()}>Retry saving</Button></AlertDescription></Alert>}<ReportDashboard report={report} onReset={reset} /></> : <><div className="mb-6"><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">New Inspection</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Inspect a packaged commodity</h1></div>{requestError && <Alert variant="destructive" className="mx-auto mb-5 max-w-3xl bg-white"><AlertTriangle /><AlertTitle>Analysis interrupted</AlertTitle><AlertDescription className="flex items-center justify-between gap-3"><span>{requestError}</span><Button variant="outline" size="sm" onClick={() => void analyze()}>Retry</Button></AlertDescription></Alert>}<UploadPanel selectedFile={selectedFile} onFile={selectFile} onAnalyze={analyze} onDemo={selectDemo} error={validationError} /></>;
+  if (view === "new-inspection") content = analyzing ? <AnalysisProgress stage={stage} /> : report ? <>{saveError && <Alert variant="destructive" className="mx-auto mb-5 max-w-5xl bg-white"><AlertTriangle /><AlertTitle>Report not saved</AlertTitle><AlertDescription className="flex items-center justify-between gap-3"><span>{saveError}</span><Button variant="outline" size="sm" onClick={() => void retrySave()}>Retry saving</Button></AlertDescription></Alert>}<ReportDashboard report={report} onReset={reset} /></> : <><div className="mb-6"><p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">New Inspection</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Inspect a packaged commodity</h1></div>{requestError && <Alert variant="destructive" className="mx-auto mb-5 max-w-3xl bg-white"><AlertTriangle /><AlertTitle>Analysis interrupted</AlertTitle><AlertDescription className="flex items-center justify-between gap-3"><span>{requestError}</span><Button variant="outline" size="sm" onClick={() => void analyze()}>Retry</Button></AlertDescription></Alert>}<UploadPanel selectedFile={selectedFile} onFile={selectFile} onAnalyze={analyze} onDemo={selectDemo} error={validationError} /></>;
   else if (dataLoading) content = <Card className="bg-white"><CardContent className="flex items-center justify-center gap-3 py-20 text-sm text-slate-500"><LoaderCircle className="size-5 animate-spin" /> Loading workspace data…</CardContent></Card>;
   else if (dataError) content = <Card className="bg-white"><CardContent className="py-10"><Alert variant="destructive"><AlertTriangle /><AlertTitle>Workspace data unavailable</AlertTitle><AlertDescription className="flex flex-wrap items-center justify-between gap-3"><span>{dataError}</span><Button variant="outline" size="sm" onClick={() => void refreshData()}><RefreshCw /> Retry</Button></AlertDescription></Alert></CardContent></Card>;
+  else if (view === "dashboard") content = <DashboardView inspections={inspections} onNavigate={setView} onOpenReport={openReport} onNew={goNew} />;
   else if (view === "history") content = <HistoryView inspections={inspections} onOpenReport={openReport} />;
   else if (view === "violations") content = <ViolationsView inspections={inspections} onOpenReport={openReport} />;
   else if (view === "analytics") content = <AnalyticsView inspections={inspections} />;
