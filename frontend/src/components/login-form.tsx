@@ -9,9 +9,7 @@ import { Button } from "@/components/ui/button";
 export function LoginForm({ providers }: { providers: AuthProviders }) {
   const router = useRouter();
   const [method, setMethod] = useState<"email" | "phone">("email");
-  const [signup, setSignup] = useState(false);
   const [contact, setContact] = useState("");
-  const [fullName, setFullName] = useState("");
   const [token, setToken] = useState("");
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,7 +31,7 @@ export function LoginForm({ providers }: { providers: AuthProviders }) {
     setBusy(true); setError("");
     try {
       const auth = createClient().auth;
-      const options = { shouldCreateUser: signup && providers.signup, ...(signup ? { data: { full_name: fullName.trim() } } : {}) };
+      const options = { shouldCreateUser: false };
       const { error } = await auth.signInWithOtp(method === "phone" ? { phone: normalized, options } : { email: normalized, options: { ...options, emailRedirectTo: `${window.location.origin}/auth/callback` } });
       if (error) throw new Error("Could not send a code. Check your details, account registration, and provider setup, then try again later.");
       setSent(true); setCooldown(60);
@@ -61,8 +59,6 @@ export function LoginForm({ providers }: { providers: AuthProviders }) {
     </div>
     {!providers.phone && <p className="text-sm text-slate-500">Phone sign-in is coming soon. Use email to sign in.</p>}
     <form onSubmit={sent ? verify : sendCode} className="space-y-4">
-      {!sent && providers.signup && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={signup} disabled={busy} onChange={e => setSignup(e.target.checked)} />Create a new account</label>}
-      {signup && !sent && <label className="block text-sm">Full name<input className="mt-1 w-full rounded border p-3" autoComplete="name" maxLength={120} required value={fullName} disabled={busy} onChange={e => setFullName(e.target.value)} /></label>}
       <label className="block text-sm">{method === "phone" ? "Phone number (with country code)" : "Email address"}<input className="mt-1 w-full rounded border p-3" type={method === "phone" ? "tel" : "email"} autoComplete={method === "phone" ? "tel" : "email"} required maxLength={254} disabled={sent || busy || !enabled} value={contact} onChange={e => setContact(e.target.value)} /></label>
       {sent && <><p className="text-sm">{method === "email" ? `Check ${contact} for a sign-in link or code. Open the link in this browser, or enter the code below.` : `Enter the code sent to ${contact}. Keep this page open.`}</p><label className="block text-sm">Verification code<input className="mt-1 w-full rounded border p-3" autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6,10}" required maxLength={10} value={token} disabled={busy} onChange={e => setToken(e.target.value)} /></label></>}
       <Button className="w-full" disabled={busy || !enabled || (!sent && cooldown > 0)} type="submit">{busy ? "Please wait…" : sent ? "Verify and sign in" : method === "email" ? "Send sign-in email" : "Send code"}</Button>
