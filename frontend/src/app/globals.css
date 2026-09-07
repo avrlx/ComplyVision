@@ -219,3 +219,7 @@
 }
 
 .scan-line { animation: scan-line 2.4s ease-in-out infinite; }
+
+/* Explicit dark buttons must keep readable text when overriding the primary fill. */
+.dark button.bg-sky-950 { color: oklch(0.96 0.012 225); }
+.dark .text-sky-700 { color: oklch(0.78 0.09 215); }
