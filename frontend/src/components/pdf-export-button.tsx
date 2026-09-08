@@ -8,8 +8,13 @@ export function PdfExportButton({ report }: { report: CanonicalReport }) {
   async function download() {
     if (busy) return;
     setBusy(true); setError("");
-    try { await (await import("@/lib/report-pdf")).downloadCompliancePdf(report); }
-    catch { setError("PDF export failed. Please retry or export JSON."); }
+    try {
+      await (await import("@/lib/report-pdf")).downloadCompliancePdf(report, {
+        createdAt: report.image.processing_timestamp ?? undefined,
+        sourceFilename: report.image.filename,
+      });
+    }
+    catch { setError("PDF export failed. Please retry or use the Markdown export."); }
     finally { setBusy(false); }
   }
   return <span className="inline-flex flex-col gap-1"><Button variant="outline" className="bg-white text-slate-900" disabled={busy} onClick={() => void download()}>{busy ? "Creating PDF…" : "Export PDF"}</Button>{error && <span role="alert" className="max-w-60 text-xs">{error}</span>}</span>;

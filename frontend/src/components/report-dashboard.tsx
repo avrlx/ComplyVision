@@ -425,7 +425,6 @@ export function ReportDashboard({ report, onReset }: { report: CanonicalReport; 
           </div>
           <div className="flex flex-wrap gap-2">
             <PdfExportButton report={report} />
-            <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => downloadReport(report, "json")}><Download /> Export JSON</Button>
             <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={() => downloadReport(report, "md")}><Download /> Export Markdown</Button>
             <Button variant="outline" className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onReset}><RotateCcw /> Analyze another image</Button>
           </div>

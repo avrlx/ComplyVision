@@ -6,6 +6,13 @@ import { ReportDashboard } from "@/components/report-dashboard";
 import { reportFixture } from "@/test/report-fixture";
 
 describe("ReportDashboard evidence", () => {
+  it("offers PDF and Markdown exports without a JSON option", () => {
+    render(<ReportDashboard report={reportFixture()} onReset={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export Markdown" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /json/i })).not.toBeInTheDocument();
+  });
+
   it("shows evidence only where related images exist and opens the viewer", async () => {
     const user = userEvent.setup();
     render(<ReportDashboard report={reportFixture()} onReset={vi.fn()} />);

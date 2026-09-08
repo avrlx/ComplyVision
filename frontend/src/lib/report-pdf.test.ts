@@ -22,3 +22,18 @@ it("paginates long evidence, retains all outcomes and does not mutate the report
   expect(output.includes(hex("₹145.00"))).toBe(true);
   expect(doc.output("arraybuffer").byteLength).toBeGreaterThan(10000);
 });
+
+it("retains supplied inspection metadata", () => {
+  const report = reportFixture();
+  const doc = createCompliancePdf(report, font, {
+    inspectionId: "inspection-123",
+    createdAt: "2026-09-02T00:00:00Z",
+    sourceFilename: "package-front.jpg",
+  });
+  const pages = (doc as unknown as { internal: { pages: string[][] } }).internal.pages;
+  const fontMetadata = doc.getFont().metadata as { characterToGlyph: (code: number) => number };
+  const hex = (text: string) => Array.from(text).map(c => fontMetadata.characterToGlyph(c.charCodeAt(0)).toString(16).padStart(4, "0")).join("");
+  const output = pages.flat().join("\n");
+  expect(output).toContain(hex("inspection-123"));
+  expect(output).toContain(hex("package-front.jpg"));
+});
