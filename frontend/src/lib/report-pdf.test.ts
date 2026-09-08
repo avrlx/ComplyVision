@@ -37,3 +37,11 @@ it("retains supplied inspection metadata", () => {
   expect(output).toContain(hex("inspection-123"));
   expect(output).toContain(hex("package-front.jpg"));
 });
+
+it("embeds valid images and gracefully labels malformed evidence", () => {
+  const report = reportFixture();
+  const image = `data:image/jpeg;base64,${readFileSync(new URL("../../public/demo-samples/standard-package.jpg", import.meta.url)).toString("base64")}`;
+  report.evidence_images!.push({ id: "package", type: "DECLARATION_CROP", label: "Sample package", mime_type: "image/jpeg", data_url: image });
+  const doc = createCompliancePdf(report, font, { sourceImageDataUrl: image });
+  expect(doc.output()).toContain("/Subtype /Image");
+});

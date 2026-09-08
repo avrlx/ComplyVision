@@ -123,9 +123,9 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
     gapAfter = 4,
     color: Color = palette.text,
   ) => {
-    const lines = split(text, contentWidth);
     setFont();
     doc.setFontSize(size);
+    const lines = split(text, contentWidth);
     doc.setTextColor(...color);
     for (const line of lines) {
       ensureSpace(lineHeight);
@@ -136,6 +136,8 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
   };
 
   const addSection = (title: string, subtitle?: string, minimumFollowing = 14) => {
+    setFont();
+    doc.setFontSize(8.5);
     const subtitleLines = subtitle ? split(subtitle, contentWidth) : [];
     ensureSpace(13 + subtitleLines.length * 4.2 + (subtitle ? 4 : 0) + minimumFollowing);
     doc.setFillColor(...palette.navy);
@@ -164,6 +166,8 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
 
   const addLabelValue = (label: string, value: string) => {
     const labelWidth = 48;
+    setFont();
+    doc.setFontSize(8.5);
     const valueLines = split(value, contentWidth - labelWidth - 3);
     const rowHeight = Math.max(7, valueLines.length * 4.2 + 2);
     ensureSpace(rowHeight + 1);
@@ -196,7 +200,9 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
     first: boolean,
     continuedAfter: boolean,
   ) => {
-    const titleLines = first ? split(rule.description, contentWidth - 38) : [safeText(`${rule.description} (continued)`)];
+    setFont("bold");
+    doc.setFontSize(first ? 9.5 : 8.5);
+    const titleLines = split(first ? rule.description : `${rule.description} (continued)`, contentWidth - 38);
     const titleLineHeight = 4.7;
     const reasonLineHeight = 4.4;
     const titleHeight = titleLines.length * titleLineHeight;
@@ -231,12 +237,16 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
   };
 
   const addCheckCard = (rule: CanonicalReport["rule_results"][number]) => {
-    const allReasonLines = split(rule.reason || "No additional explanation was provided.", contentWidth - 10);
+    setFont();
+    doc.setFontSize(8.5);
+    const allReasonLines = split([rule.reason || "No additional explanation was provided.", `Rule: ${rule.rule_id} | Legal source: ${rule.legal_source || "Unknown"}`, `Applicable: ${rule.applicable ? "Yes" : "No"} | Confidence: ${typeof rule.confidence === "number" ? `${(rule.confidence * 100).toFixed(1)}%` : "Unknown"}`, `Reason codes: ${rule.reason_codes.join(", ") || "None"}`, ...(rule.issues?.length ? [`Issues: ${rule.issues.join(", ")}`] : [])].join("\n"), contentWidth - 10);
     let offset = 0;
     let first = true;
 
     while (offset < allReasonLines.length) {
-      const titleLines = first ? split(rule.description, contentWidth - 38) : [safeText(`${rule.description} (continued)`)];
+      setFont("bold");
+      doc.setFontSize(first ? 9.5 : 8.5);
+      const titleLines = split(first ? rule.description : `${rule.description} (continued)`, contentWidth - 38);
       const fixedHeight = 21 + titleLines.length * 4.7 + 4;
       const minimumCardHeight = fixedHeight + 4.4;
       if (ensureSpace(minimumCardHeight) && first) addContinuationLabel("Compliance checks");
@@ -356,21 +366,8 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
     addParagraph("No product declarations were detected.", 9, 4.5, 2, palette.muted);
   } else {
     declarations.forEach((field) => {
-      const valueLines = split(display(field.normalized_value), contentWidth - 8);
-      const cardHeight = Math.max(14, 8 + valueLines.length * 4.5);
-      if (ensureSpace(cardHeight + 4)) addContinuationLabel("Extracted declarations");
-      doc.setFillColor(...palette.card);
-      doc.setDrawColor(...palette.border);
-      doc.roundedRect(margin, y, contentWidth, cardHeight, 2, 2, "FD");
-      setFont("bold");
-      doc.setFontSize(8);
-      doc.setTextColor(...palette.blue);
-      doc.text(safeText(humanize(field.field_name).toUpperCase()), margin + 4, y + 5.5);
-      setFont();
-      doc.setFontSize(9);
-      doc.setTextColor(...palette.text);
-      doc.text(valueLines, margin + 4, y + 10);
-      y += cardHeight + 4;
+      addSection(humanize(field.field_name), `${field.present ? "Detected" : "Not detected"} · Confidence: ${typeof field.extraction_confidence === "number" ? `${(field.extraction_confidence * 100).toFixed(1)}%` : "Unknown"}`, 10);
+      addParagraph(display(field.normalized_value), 9, 4.5, 5);
     });
   }
 
@@ -379,6 +376,33 @@ export function createCompliancePdf(report: CanonicalReport, fontBase64: string,
     addParagraph("No compliance checks are available for this inspection.", 9, 4.5, 2, palette.muted);
   } else {
     report.rule_results.forEach(addCheckCard);
+  }
+
+  if (report.evidence_images?.length) {
+    addSection("Visual evidence", "Captured declaration crops and measurement overlays, linked to the original checks.", 80);
+    report.evidence_images.forEach((image, index) => {
+      try {
+        if (!/^data:image\/(png|jpeg);base64,/.test(image.data_url)) throw new Error("Unsupported image");
+        const properties = doc.getImageProperties(image.data_url);
+        const scale = Math.min((contentWidth - 12) / properties.width, 95 / properties.height);
+        const width = properties.width * scale;
+        const height = properties.height * scale;
+        setFont();
+        doc.setFontSize(8.5);
+        const caption = split(`Figure ${index + 1}. ${image.label}${image.related_rule_id ? ` | ${image.related_rule_id}` : ""}`, contentWidth - 8);
+        ensureSpace(height + 14 + caption.length * 4.5);
+        doc.setFillColor(...palette.card);
+        doc.setDrawColor(...palette.border);
+        doc.roundedRect(margin, y, contentWidth, height + 8, 2, 2, "FD");
+        doc.addImage(image.data_url, properties.fileType, margin + (contentWidth - width) / 2, y + 4, width, height, undefined, "FAST");
+        y += height + 13;
+        doc.setTextColor(...palette.muted);
+        doc.text(caption, margin + 4, y);
+        y += caption.length * 4.5 + 5;
+      } catch {
+        addParagraph(`Figure ${index + 1}. ${image.label}: image unavailable or invalid.`, 8.5, 4.5, 4, palette.muted);
+      }
+    });
   }
 
   if (report.warnings.length > 0) {

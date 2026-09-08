@@ -19,3 +19,13 @@ describe("report exports", () => {
     expect(markdown).toContain("PASS 8 · FAIL 0 · REVIEW 1 · NOT_APPLICABLE 1");
   });
 });
+
+it("embeds source and evidence figures and escapes table content", () => {
+  const report = reportFixture();
+  report.image.filename = "test|<img>.jpg";
+  const markdown = reportToMarkdown(report, { sourceImageDataUrl: "data:image/png;base64,YQ==" });
+  expect(markdown).toContain("Figure 1. Source package image");
+  expect(markdown).toContain("Figure 2. Numeral height measurement overlay");
+  expect(markdown).toContain("[evidence-1]: data:image/png;base64,YQ==");
+  expect(markdown).toContain("test\\|&lt;img&gt;.jpg");
+});

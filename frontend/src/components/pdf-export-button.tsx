@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { CanonicalReport } from "@/types/report";
-export function PdfExportButton({ report }: { report: CanonicalReport }) {
+export function PdfExportButton({ report, sourceImageDataUrl }: { report: CanonicalReport; sourceImageDataUrl?: string | null }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function download() {
@@ -12,6 +12,7 @@ export function PdfExportButton({ report }: { report: CanonicalReport }) {
       await (await import("@/lib/report-pdf")).downloadCompliancePdf(report, {
         createdAt: report.image.processing_timestamp ?? undefined,
         sourceFilename: report.image.filename,
+        sourceImageDataUrl,
       });
     }
     catch { setError("PDF export failed. Please retry or use the Markdown export."); }
