@@ -22,7 +22,11 @@ from cv.contrast import measure_local_contrast
 from cv.glyph_measurement import measure_net_quantity_numerals
 from cv.measurement import estimate_text_height_mm
 from cv.measurement_confidence import aggregate_measurement_confidence
-from cv.ocr import predict_ocr_items, recover_split_quantity_items
+from cv.ocr import (
+    predict_ocr_items,
+    recover_embossed_declaration_items,
+    recover_split_quantity_items,
+)
 from cv.ocr_filter import filter_ocr_items_near_aruco
 from cv.quality import analyze_image_quality
 from cv.validation import (
@@ -396,6 +400,9 @@ def process_image(
         try:
             raw_items = _raw_ocr_items(ocr, image)
             recovered_items, recovery = recover_split_quantity_items(image, raw_items, ocr)
+            recovered_items, declaration_recovery = recover_embossed_declaration_items(
+                image, recovered_items, ocr
+            )
             filtered_items = list(filter_ocr_items_near_aruco(
                 recovered_items,
                 result["aruco"].get("corners"),
@@ -406,6 +413,7 @@ def process_image(
                 "raw_item_count": len(raw_items),
                 "filtered_item_count": len(filtered_items),
                 "quantity_crop_recovery": recovery,
+                "embossed_declaration_recovery": declaration_recovery,
             }
             if not raw_items:
                 _record_failure(result, "ocr", "PaddleOCR returned no text")

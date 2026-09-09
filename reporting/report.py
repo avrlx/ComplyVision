@@ -213,10 +213,12 @@ def _reason_codes(
         }[status]
         codes = [code]
     elif field_name == "net_quantity_font_height":
-        codes = [
-            "NOT_APPLICABLE_QUANTITY_TYPE"
-            if status == "NOT_APPLICABLE" else "MEASUREMENT_NOT_VALIDATED"
-        ]
+        codes = [{
+            "PASS": "MEASUREMENT_COMPLIANT",
+            "FAIL": "MEASUREMENT_BELOW_MINIMUM",
+            "REVIEW": "MEASUREMENT_NOT_VALIDATED",
+            "NOT_APPLICABLE": "NOT_APPLICABLE_QUANTITY_TYPE",
+        }[status]]
         if not (batch_result.get("aruco") or {}).get("detected"):
             codes.append("CALIBRATION_UNAVAILABLE")
     elif status == "NOT_APPLICABLE":

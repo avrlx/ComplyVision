@@ -142,6 +142,40 @@ class ExtractionRegressionTests(unittest.TestCase):
         self.assertEqual(result["mrp"]["value"], 250.0)
         self.assertEqual(result["net_quantity"]["value"], 50.0)
 
+    def test_mrp_does_not_select_a_number_embedded_in_address_text(self):
+        items = [
+            {"text": "MRP", "confidence": 0.99, "box": [0, 0, 80, 20]},
+            {"text": "Consumer Services Cell, PO Box no. 9411,", "confidence": 0.95, "box": [0, 25, 300, 50]},
+        ]
+        self.assertIsNone(extract_fields(items)["mrp"])
+
+    def test_embossed_see_below_values_are_recovered_without_unit_price_confusion(self):
+        lines = [
+            ("Mfd., Batch No., MRP", [100, 500, 360, 530], False),
+            ("See Below", [370, 500, 470, 530], False),
+            ("INGREDIENTS: Paraffinum Liquidum", [100, 580, 420, 610], False),
+            ("Store in cool place", [100, 700, 320, 730], False),
+            ("10/25", [190, 1100, 280, 1130], True),
+            ("CG069,L", [180, 1140, 300, 1170], True),
+            ("₹43.00", [180, 1180, 300, 1210], True),
+            ("₹0.48/ml", [180, 1220, 320, 1250], True),
+        ]
+        items = [
+            {
+                "text": text,
+                "confidence": 0.91,
+                "box": box,
+                **({"recovered_from_declaration_crop": True} if recovered else {}),
+            }
+            for text, box, recovered in lines
+        ]
+
+        result = extract_fields(items)
+
+        self.assertEqual(result["manufacture_date"]["normalized"], "2025-10")
+        self.assertEqual(result["mrp"]["value"], 43.0)
+        self.assertEqual(result["mrp"]["source_text"], "₹43.00")
+
     def test_inline_role_and_wrapped_company_name(self):
         lines = [
             "Manufactured By: ACME GLOBAL",

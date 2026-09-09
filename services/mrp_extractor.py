@@ -49,6 +49,10 @@ def _candidate_score(label: dict[str, Any], candidate: dict[str, Any], amount: f
     # A currency marker on the amount is strong evidence that this is a price.
     if re.search(r"₹|\bRS\.?\b|\bINR\b|/-", text, re.I):
         score += 45
+    elif amount < 10:
+        # A lone nearby digit is usually a barcode/check digit. Sub-ten MRP
+        # values require an explicit currency marker to be reliable.
+        return -10_000
     # MRP values printed as money commonly retain two decimal places.
     if re.fullmatch(r"\d{1,6}\.\d{2}", text):
         score += 30
@@ -58,6 +62,8 @@ def _candidate_score(label: dict[str, Any], candidate: dict[str, Any], amount: f
     # Never select unit-sale-price or nutrition percentage evidence.
     if UNIT_PRICE.search(text) or "%" in text:
         return -10_000
+    if candidate.get("recovered_from_declaration_crop"):
+        score += 80
 
     label_center = _box_center(label.get("box"))
     candidate_center = _box_center(candidate.get("box"))

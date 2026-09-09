@@ -11,6 +11,13 @@ import cv2
 from extract_fields import QUANTITY_LABEL_RE, is_standalone_quantity_candidate
 
 
+EMBOSSED_DECLARATION_LABEL_RE = re.compile(
+    r"\b(?:MFD|MFG|MANUFACTURE(?:D)?|BATCH\s*(?:NO\.?)?|M\s*\.?\s*R\s*\.?\s*P\.?)\b",
+    re.I,
+)
+SEE_BELOW_RE = re.compile(r"\bSEE\s+BELOW\b", re.I)
+
+
 def _as_box(value: Any, offset: tuple[int, int] = (0, 0)) -> list[int]:
     raw = value.tolist() if hasattr(value, "tolist") else list(value)
     x_offset, y_offset = offset
@@ -121,4 +128,130 @@ def recover_split_quantity_items(
         "recovered": bool(recovered),
         "attempted_crops": attempted_crops,
         "recovered_item_count": len(recovered),
+    }
+
+
+def _embossed_variants(crop: Any) -> list[Any]:
+    """Create OCR views that make shallow embossed strokes locally visible."""
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(gray)
+    sharpened = cv2.addWeighted(clahe, 2.1, cv2.GaussianBlur(clahe, (0, 0), 2.0), -1.1, 0)
+
+    # Embossing may be lit from either direction. Morphological top/black-hat
+    # views retain both the highlight and shadow halves of each stamped glyph.
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    top_hat = cv2.morphologyEx(clahe, cv2.MORPH_TOPHAT, kernel)
+    black_hat = cv2.morphologyEx(clahe, cv2.MORPH_BLACKHAT, kernel)
+    relief = cv2.normalize(
+        cv2.addWeighted(top_hat, 1.0, black_hat, 1.0, 0),
+        None,
+        0,
+        255,
+        cv2.NORM_MINMAX,
+    )
+    return [
+        cv2.cvtColor(sharpened, cv2.COLOR_GRAY2BGR),
+        cv2.cvtColor(relief, cv2.COLOR_GRAY2BGR),
+    ]
+
+
+def recover_embossed_declaration_items(
+    image_path: str | Path,
+    items: list[dict[str, Any]],
+    ocr: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Retry the area indicated by an explicit ``MFD/MRP -- see below`` cue.
+
+    Manufacturers often stamp the actual date, batch and price into glossy
+    plastic well below the printed declaration label. Full-image OCR commonly
+    detects the printed cue but loses those low-contrast embossed characters.
+    This recovery is deliberately gated by both parts of that cue.
+    """
+    labels = [
+        item for item in items
+        if EMBOSSED_DECLARATION_LABEL_RE.search(str(item.get("text") or ""))
+    ]
+    below_items = [item for item in items if SEE_BELOW_RE.search(str(item.get("text") or ""))]
+    if not below_items:
+        # OCR frequently splits the two-word cue into separate lines.
+        see_items = [item for item in items if re.fullmatch(r"\s*SEE\s*", str(item.get("text") or ""), re.I)]
+        below_words = [item for item in items if re.fullmatch(r"\s*BELOW\s*", str(item.get("text") or ""), re.I)]
+        for see_item in see_items:
+            sx1, sy1, sx2, sy2 = see_item.get("box") or [0, 0, 0, 0]
+            for below_item in below_words:
+                bx1, by1, bx2, by2 = below_item.get("box") or [0, 0, 0, 0]
+                if (
+                    abs(bx1 - sx1) <= max(80, sx2 - sx1)
+                    and -max(20, sy2 - sy1) <= by1 - sy2 <= max(80, (sy2 - sy1) * 3)
+                ):
+                    below_items.extend((see_item, below_item))
+                    break
+            if below_items:
+                break
+    if not labels or not below_items:
+        return items, {"attempted": False, "recovered": False, "reason": "embossed_declaration_cue_not_found"}
+
+    image = cv2.imread(str(image_path))
+    if image is None:
+        return items, {"attempted": False, "recovered": False, "reason": "image_unreadable"}
+    height, width = image.shape[:2]
+    cue_boxes = [item.get("box") for item in labels + below_items if item.get("box")]
+    if not cue_boxes:
+        return items, {"attempted": False, "recovered": False, "reason": "cue_geometry_unavailable"}
+
+    x1 = min(int(box[0]) for box in cue_boxes)
+    y2 = max(int(box[3]) for box in cue_boxes)
+    x2 = max(int(box[2]) for box in cue_boxes)
+    cue_width = max(80, x2 - x1)
+    cue_height = max(12, max(int(box[3]) - int(box[1]) for box in cue_boxes))
+    crop_box = (
+        max(0, x1 - cue_width // 3),
+        min(height, y2 + cue_height),
+        min(width, x2 + cue_width * 2),
+        height,
+    )
+    cx1, cy1, cx2, cy2 = crop_box
+    if cx2 <= cx1 or cy2 <= cy1:
+        return items, {"attempted": False, "recovered": False, "reason": "empty_recovery_crop"}
+
+    crop = image[cy1:cy2, cx1:cx2]
+    recovered: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for variant_index, variant in enumerate(_embossed_variants(crop), start=1):
+        try:
+            candidates = predict_ocr_items(ocr, variant, offset=(cx1, cy1))
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        for candidate in candidates:
+            text = re.sub(r"\s+", " ", str(candidate.get("text") or "")).strip()
+            if not text:
+                continue
+            candidate.update({
+                "text": text,
+                "source_image": str(image_path),
+                "recovered_from_declaration_crop": True,
+                "recovery_variant": variant_index,
+            })
+            duplicate = next((
+                existing for existing in items + recovered
+                if str(existing.get("text") or "").casefold() == text.casefold()
+                and existing.get("box") == candidate.get("box")
+            ), None)
+            if duplicate is None:
+                recovered.append(candidate)
+
+    # Restore reading order so semantic windows can associate recovered values
+    # with the printed declaration cue even when many unrelated lines exist.
+    combined = items + recovered
+    combined.sort(key=lambda item: (
+        int((item.get("box") or [0, 0, 0, 0])[1]),
+        int((item.get("box") or [0, 0, 0, 0])[0]),
+    ))
+    return combined, {
+        "attempted": True,
+        "recovered": bool(recovered),
+        "crop_box": list(crop_box),
+        "recovered_item_count": len(recovered),
+        "errors": errors,
     }

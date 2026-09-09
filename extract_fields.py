@@ -302,7 +302,11 @@ def _extract_quantity(items: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 def _parse_mrp(text: str) -> float | None:
     value_text = MRP_LABEL_RE.sub("", text, count=1).strip(" :;.-")
-    if _parse_quantity(value_text) is not None or LICENSE_RE.search(value_text) or re.search(r"\b(?:BATCH|FSSAI)\b", value_text, re.I):
+    if (
+        _parse_quantity(value_text) is not None
+        or LICENSE_RE.search(value_text)
+        or re.search(r"\b(?:BATCH|FSSAI|USP|UNIT\s+SALE|PER\s+(?:G|KG|ML|L|UNIT))\b|/\s*(?:G|KG|ML|L)\b", value_text, re.I)
+    ):
         return None
     if _parse_date(value_text) is not None:
         return None
@@ -338,8 +342,18 @@ def _extract_mrp(items: list[dict[str, Any]]) -> dict[str, Any] | None:
                 "inclusive_of_all_taxes": _includes_all_taxes(full_text),
                 **_evidence(label),
             }
-        for candidate_index in _candidate_indices(items, label_index, radius=8):
+        candidate_indices = list(_candidate_indices(items, label_index, radius=8))
+        candidate_indices.extend(
+            index for index, item in enumerate(items)
+            if item.get("recovered_from_declaration_crop") and index not in candidate_indices
+        )
+        for candidate_index in candidate_indices:
             candidate = items[candidate_index]
+            candidate_text = candidate["text"].strip()
+            if not re.search(r"₹|\bRS\.?\b|\bINR\b|/-", candidate_text, re.I) and not re.fullmatch(
+                r"\d{1,5}(?:\.\d{1,2})?", candidate_text
+            ):
+                continue
             amount = _parse_mrp(candidate["text"])
             if amount is None:
                 continue
@@ -380,6 +394,11 @@ def _parse_date(text: str) -> tuple[str, str, str] | None:
     numeric_month = re.search(r"\b(0?[1-9]|1[0-2])[-/](\d{4})\b", text)
     if numeric_month:
         return numeric_month.group(0), f"{numeric_month.group(2)}-{int(numeric_month.group(1)):02d}", "manufacture_month_year"
+    short_numeric_month = re.search(r"\b(0?[1-9]|1[0-2])[-/](\d{2})\b", text)
+    if short_numeric_month:
+        year = int(short_numeric_month.group(2))
+        year += 2000 if year < 70 else 1900
+        return short_numeric_month.group(0), f"{year:04d}-{int(short_numeric_month.group(1)):02d}", "manufacture_month_year"
     return None
 
 
@@ -388,7 +407,12 @@ def _extract_manufacture_date(items: list[dict[str, Any]]) -> dict[str, Any] | N
     for label_index, label in enumerate(items):
         if not DATE_LABEL_RE.search(label["text"]) or EXPIRY_LABEL_RE.search(label["text"]):
             continue
-        for candidate_index in [label_index, *_candidate_indices(items, label_index, radius=5)]:
+        candidate_indices = [label_index, *_candidate_indices(items, label_index, radius=5)]
+        candidate_indices.extend(
+            index for index, item in enumerate(items)
+            if item.get("recovered_from_declaration_crop") and index not in candidate_indices
+        )
+        for candidate_index in candidate_indices:
             candidate = items[candidate_index]
             parsed = _parse_date(candidate["text"])
             if parsed:
@@ -633,7 +657,8 @@ def extract_fields(ocr_items):
         **organizations, "consumer_care": _extract_consumer_care(items), "country_of_origin": country,
         "ocr_evidence": [
             {"raw_text": item["raw_text"], "normalized_text": item["normalized_text"],
-             "confidence": item["confidence"], "box": item["box"], "source_image": item.get("source_image")}
+             "confidence": item["confidence"], "box": item["box"], "source_image": item.get("source_image"),
+             **({"recovered_from_declaration_crop": True} if item.get("recovered_from_declaration_crop") else {})}
             for item in items
         ],
     }

@@ -56,6 +56,42 @@ class RuleEngineTests(unittest.TestCase):
         self.assertEqual(status, "REVIEW")
         self.assertEqual(reason, "Physical font measurement requires calibrated image analysis")
 
+    def test_rule_7_passes_with_good_confidence_and_compliant_height(self):
+        fields = {
+            "net_quantity": {"value": 90, "unit": "ML"},
+            "net_quantity_font_height_measurement": {
+                "status": "OK",
+                "estimated_numeral_height_mm": 4.47,
+                "measurement_confidence": 0.935,
+            },
+        }
+        result = evaluate_rule(_rule("net_quantity_font_height"), fields)
+        self.assertEqual(result["status"], "PASS")
+        self.assertIn("meets", result["reason"])
+
+    def test_rule_7_reviews_low_confidence_and_fails_trusted_short_height(self):
+        fields = {"net_quantity": {"value": 250, "unit": "ML"}}
+        fields["net_quantity_font_height_measurement"] = {
+            "status": "OK", "estimated_numeral_height_mm": 3.0, "measurement_confidence": 0.84,
+        }
+        self.assertEqual(evaluate_rule(_rule("net_quantity_font_height"), fields)["status"], "REVIEW")
+        fields["net_quantity_font_height_measurement"].update(
+            estimated_numeral_height_mm=1.5, measurement_confidence=0.95
+        )
+        self.assertEqual(evaluate_rule(_rule("net_quantity_font_height"), fields)["status"], "FAIL")
+
+    def test_rule_7_uses_doubled_threshold_for_formed_surface(self):
+        fields = {
+            "net_quantity": {"value": 250, "unit": "G"},
+            "package_surface_formed": True,
+            "net_quantity_font_height_measurement": {
+                "status": "OK", "estimated_numeral_height_mm": 3.5, "measurement_confidence": 0.95,
+            },
+        }
+        self.assertEqual(evaluate_rule(_rule("net_quantity_font_height"), fields)["status"], "FAIL")
+        fields["net_quantity_font_height_measurement"]["estimated_numeral_height_mm"] = 4.0
+        self.assertEqual(evaluate_rule(_rule("net_quantity_font_height"), fields)["status"], "PASS")
+
     def test_structured_manufacture_date_passes(self):
         value = {"raw": "February 2022", "normalized": "2022-02", "type": "manufacture_month_year"}
         self.assertEqual(validate_month_year(value)[0], "PASS")

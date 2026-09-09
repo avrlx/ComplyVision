@@ -22,6 +22,22 @@ def test_enhancement_preserves_reliable_declarations_and_rejects_quantity_as_pri
     assert not missing.get('product')
 
 
+def test_mrp_correction_prefers_recovered_embossed_price_over_barcode_digit():
+    evidence = [
+        {'raw_text': 'Mfd., Batch No., MRP', 'confidence': .99, 'box': [200, 560, 450, 620]},
+        {'raw_text': '4', 'confidence': 1.0, 'box': [635, 740, 655, 765]},
+        {
+            'raw_text': '43.00',
+            'confidence': .99,
+            'box': [330, 1220, 590, 1300],
+            'recovered_from_declaration_crop': True,
+        },
+    ]
+    result = correct_mrp({'ocr_evidence': evidence})
+    assert result['mrp']['value'] == 43.0
+    assert result['mrp']['source_text'] == '43.00'
+
+
 def test_ensemble_preserves_primary_text_and_requires_numeric_agreement():
     box = [0, 0, 200, 30]
     result = _merge_passes([
@@ -58,25 +74,29 @@ def test_analyzer_retains_non_core_rule_outcomes(tmp_path, failed_contrast, expe
     assert report['summary']['overall_status'] == expected
 
 
-@pytest.mark.parametrize('height', [3.0, 0.2, None, 'bad', float('nan'), float('inf')])
-def test_pr3_measurement_does_not_promote_unvalidated_rule7(height):
+@pytest.mark.parametrize('height,expected', [
+    (3.0, 'PASS'), (0.2, 'FAIL'), (None, 'REVIEW'), ('bad', 'REVIEW'),
+    (float('nan'), 'REVIEW'), (float('inf'), 'REVIEW'),
+])
+def test_rule7_uses_good_confidence_measurement(height, expected):
     from rules.engine import evaluate_rule
     rule = {'field_name': 'net_quantity_font_height'}
     measurement = {'status': 'OK', 'estimated_numeral_height_mm': height, 'confidence': .99}
     result = evaluate_rule(rule, {'net_quantity': {'value': 250, 'unit': 'ML'},
                                   'net_quantity_font_height_measurement': measurement})
-    assert result['status'] == 'REVIEW'
+    assert result['status'] == expected
     assert result['value'] == measurement
     count = evaluate_rule(rule, {'net_quantity': {'value': 2, 'unit': 'N'},
                                 'net_quantity_font_height_measurement': measurement})
     assert count['status'] == 'NOT_APPLICABLE'
 
 
-def test_pr3_reporting_measurement_does_not_mutate_input_fields():
+def test_rule7_reporting_measurement_does_not_mutate_input_fields():
     from reporting.report import build_rule_results
     batch = _batch_result()
+    batch['glyph_measurement']['measurement_confidence'] = 0.90
     fields = deepcopy(batch['extracted_fields'])
     before = deepcopy(fields)
     results = build_rule_results(fields, {}, batch)
     assert fields == before
-    assert next(row for row in results if row['rule_id'] == 'LM-R7-001')['status'] == 'REVIEW'
+    assert next(row for row in results if row['rule_id'] == 'LM-R7-001')['status'] == 'PASS'

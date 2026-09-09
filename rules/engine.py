@@ -5,6 +5,7 @@ from pathlib import Path
 
 
 RULES_FILE = Path(__file__).resolve().parent.parent / "data" / "prototype-rules.csv"
+RULE_7_GOOD_CONFIDENCE = 0.85
 
 
 def load_rules():
@@ -340,6 +341,79 @@ def evaluate_font_height_applicability(fields):
         f"Unknown quantity unit: {unit}"
     )
 
+
+def _rule_7_minimum_height_mm(quantity, formed=False):
+    """Return the applicable Rule 7 Table-I numeral-height threshold."""
+    if not isinstance(quantity, dict):
+        return None
+    value = quantity.get("value")
+    unit = str(quantity.get("unit", "")).upper()
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+        return None
+    if unit == "KG":
+        magnitude = value * 1000
+    elif unit == "L":
+        magnitude = value * 1000
+    elif unit in {"G", "ML"}:
+        magnitude = value
+    else:
+        return None
+    if magnitude <= 200:
+        standard = 1.0
+    elif magnitude <= 500:
+        standard = 2.0
+    else:
+        standard = 4.0
+    return standard * 2 if formed else standard
+
+
+def validate_rule_7_font_height(fields, glyph):
+    """Evaluate Rule 7 when calibrated numeral-height evidence is trustworthy."""
+    applicability, reason = evaluate_font_height_applicability(fields)
+    if applicability == "NOT_APPLICABLE":
+        return applicability, reason
+    if not isinstance(glyph, dict):
+        return "REVIEW", "Numeral-height measurement is unavailable"
+    if glyph.get("status") != "OK":
+        return "REVIEW", glyph.get("reason") or "Numeral-height measurement is not usable"
+
+    confidence = glyph.get("measurement_confidence", glyph.get("confidence"))
+    if (
+        not isinstance(confidence, (int, float))
+        or isinstance(confidence, bool)
+        or not math.isfinite(confidence)
+        or confidence < RULE_7_GOOD_CONFIDENCE
+    ):
+        return "REVIEW", (
+            "Numeral-height measurement confidence is below the good-confidence "
+            f"threshold ({RULE_7_GOOD_CONFIDENCE:.2f})"
+        )
+
+    height = glyph.get("estimated_numeral_height_mm")
+    if (
+        not isinstance(height, (int, float))
+        or isinstance(height, bool)
+        or not math.isfinite(height)
+        or height <= 0
+    ):
+        return "REVIEW", "Numeral-height measurement is missing or invalid"
+
+    minimum = _rule_7_minimum_height_mm(
+        fields.get("net_quantity"),
+        formed=fields.get("package_surface_formed") is True,
+    )
+    if minimum is None:
+        return "REVIEW", "Applicable Rule 7 minimum height could not be determined"
+    if height >= minimum:
+        return "PASS", (
+            f"Estimated numeral height {height:.2f} mm meets the applicable "
+            f"{minimum:.2f} mm minimum (confidence {confidence:.1%})"
+        )
+    return "FAIL", (
+        f"Estimated numeral height {height:.2f} mm is below the applicable "
+        f"{minimum:.2f} mm minimum (confidence {confidence:.1%})"
+    )
+
 def evaluate_rule(rule, fields):
     field_name = rule["field_name"]
 
@@ -414,17 +488,8 @@ def evaluate_rule(rule, fields):
         "value": fields.get("net_quantity")
         }
     elif field_name == "net_quantity_font_height":
-
-        status, reason = evaluate_font_height_applicability(fields)
         glyph = fields.get("net_quantity_font_height_measurement")
-        if status != "NOT_APPLICABLE" and isinstance(glyph, dict):
-            height = glyph.get("estimated_numeral_height_mm")
-            if isinstance(height, (int, float)) and not isinstance(height, bool) and math.isfinite(height) and height > 0:
-                reason = (f"Estimated numeral height {height:.2f} mm; physical measurement "
-                          "and applicable legal threshold require independent validation")
-            else:
-                reason = "Numeral-height measurement is missing or invalid; human review required"
-            status = "REVIEW"
+        status, reason = validate_rule_7_font_height(fields, glyph)
         return {"status": status, "reason": reason,
                 "value": glyph if isinstance(glyph, dict) else fields.get("net_quantity")}
     elif field_name == "mrp_netqty_contrast":
