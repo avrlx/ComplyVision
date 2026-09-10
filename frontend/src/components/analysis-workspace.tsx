@@ -3,7 +3,7 @@
 import { InspectorProfile } from "@/components/inspector-profile";
 import { WorkspaceShell } from "@/components/workspace-shell";
 
-export function AnalysisWorkspace({ accountId, persistenceEnabled = false }: { accountId?: string; persistenceEnabled?: boolean }) {
+export function AnalysisWorkspace({ accountId, persistenceEnabled = false, showInspectorProfile = true }: { accountId?: string; persistenceEnabled?: boolean; showInspectorProfile?: boolean }) {
   return (
     <>
       <style jsx global>{`
@@ -25,7 +25,7 @@ export function AnalysisWorkspace({ accountId, persistenceEnabled = false }: { a
         .dark main .bg-sky-50\\/60 p + p { color: oklch(0.78 0.02 225) !important; }
       `}</style>
       <WorkspaceShell accountId={accountId} persistenceEnabled={persistenceEnabled} />
-      {accountId && <InspectorProfile accountId={accountId} phoneEnabled={false} />}
+      {accountId && showInspectorProfile && <InspectorProfile accountId={accountId} phoneEnabled={false} />}
     </>
   );
 }

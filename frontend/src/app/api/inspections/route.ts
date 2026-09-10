@@ -1,13 +1,21 @@
 import { validSourcePreview } from "@/lib/source-preview";
+import { createTestingAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import { databaseEnabled, supabaseConfigured } from "@/lib/auth/config";
+import { databaseEnabled, supabaseConfigured, testingDatabaseConfigured, testingMode, testingWorkspaceUserId } from "@/lib/auth/config";
 import { isVerifiedUser } from "@/lib/auth/user";
 import { productName, validStoredReport } from "@/lib/inspection-record";
 
 const fields = "id,status,product_name,source_filename,source_image_data_url,report,created_at";
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 async function authorize(request: Request) {
-  if (!databaseEnabled() || !supabaseConfigured()) return json({ error: "Saved history is not enabled for this deployment." }, 503);
+  if (!databaseEnabled()) return json({ error: "Saved history is not enabled for this deployment." }, 503);
+  if (testingMode()) {
+    const userId = testingWorkspaceUserId();
+    if (!testingDatabaseConfigured() || !userId) return json({ error: "Testing database isolation is not configured." }, 503);
+    if (request.headers.get("X-ComplyVision-User") !== userId) return json({ error: "Invalid testing workspace." }, 401);
+    return { client: createTestingAdminClient(), user: { id: userId } };
+  }
+  if (!supabaseConfigured()) return json({ error: "Saved history is not enabled for this deployment." }, 503);
   const client = await createClient();
   const { data: { user }, error } = await client.auth.getUser();
   if (error || !isVerifiedUser(user) || request.headers.get("X-ComplyVision-User") !== user.id) return json({ error: "Sign in again to access saved reports." }, 401);

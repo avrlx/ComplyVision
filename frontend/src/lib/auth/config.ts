@@ -1,12 +1,34 @@
-/** Deployment switches are server-only; opt in after completing docs/AUTH_DATABASE_SETUP.md. */
+/** Security-sensitive deployment switches are server-only. */
+export function appEnvironment() {
+  return process.env.COMPLYVISION_APP_ENV;
+}
+export function testingMode() {
+  return appEnvironment() === "testing";
+}
 export function authEnabled() {
+  if (appEnvironment() === "production") return true;
+  if (testingMode()) return false;
   return process.env.COMPLYVISION_AUTH_ENABLED === "true";
 }
 export function databaseEnabled() {
-  return authEnabled() && process.env.COMPLYVISION_DATABASE_ENABLED === "true";
+  return process.env.COMPLYVISION_DATABASE_ENABLED === "true" && (authEnabled() || testingMode());
 }
 export function supabaseConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+}
+export function testingDatabaseConfigured() {
+  return Boolean(
+    testingMode() &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+    testingWorkspaceUserId(),
+  );
+}
+export function testingWorkspaceUserId() {
+  const value = process.env.COMPLYVISION_TEST_USER_ID;
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : undefined;
 }
 export interface AuthProviders { email: boolean; phone: boolean; signup: boolean; unavailable: boolean }
 export async function getAuthProviders(): Promise<AuthProviders> {

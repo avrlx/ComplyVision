@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: complyvision-testing-api
+    runtime: python
+    branch: complyvision-testing
+    region: singapore
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: COMPLYVISION_APP_ENV
+        value: testing
+      - key: SIH_FRONTEND_ORIGINS
+        sync: false
+      - key: SIH_MAX_UPLOAD_BYTES
+        value: "10485760"
