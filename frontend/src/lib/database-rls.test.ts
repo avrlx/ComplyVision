@@ -8,11 +8,11 @@ const alice = "11111111-1111-4111-8111-111111111111";
 const bob = "22222222-2222-4222-8222-222222222222";
 beforeAll(async () => {
   db = new PGlite();
-  await db.exec(`create role anon; create role authenticated; create schema auth;
+  await db.exec(`create role anon; create role authenticated; create role service_role bypassrls; create schema auth;
     create table auth.users(id uuid primary key, raw_user_meta_data jsonb);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     create function auth.jwt() returns jsonb language sql stable as $$ select current_setting('request.jwt.claims', true)::jsonb $$;
-    grant usage on schema public, auth to anon, authenticated;
+    grant usage on schema public, auth to anon, authenticated, service_role;
     grant execute on function auth.uid(), auth.jwt() to anon, authenticated;`);
   const root = new URL("../../../supabase/migrations/", import.meta.url);
   for (const file of readdirSync(root).filter(name => name.endsWith(".sql")).sort()) await db.exec(readFileSync(new URL(file, root), "utf8"));
@@ -49,4 +49,11 @@ it("isolates two accounts, denies anonymous access and prevents role/report edit
   await expect(db.query("insert into inspections (user_id,status,report) values ($1,'REVIEW','{\"summary\":{\"overall_status\":\"REVIEW\"}}')", [alice])).rejects.toThrow(/row-level security/i);
   await db.exec("reset role; set role anon");
   await expect(db.exec("select * from inspections")).rejects.toThrow(/permission denied/i);
+});
+it("grants the testing server role immutable inspection access", async () => {
+  await db.exec("reset role; set role service_role");
+  await db.query("insert into inspections (user_id,status,report) values ($1,'REVIEW','{\"summary\":{\"overall_status\":\"REVIEW\"}}')", [alice]);
+  expect((await db.query("select id from inspections where user_id = $1", [alice])).rows).toHaveLength(3);
+  await expect(db.exec("update inspections set status='PASS'")).rejects.toThrow(/permission denied/i);
+  await expect(db.exec("delete from inspections")).rejects.toThrow(/permission denied/i);
 });

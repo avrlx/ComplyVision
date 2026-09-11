@@ -82,6 +82,9 @@ revoke all on table public.inspections from anon, authenticated;
 grant select on table public.profiles to authenticated;
 grant update (full_name) on table public.profiles to authenticated;
 grant select, insert on table public.inspections to authenticated;
+-- Testing deployments use a server-only admin client. Explicit grants are
+-- required because SQL-editor-created tables may not inherit default grants.
+grant select, insert on table public.inspections to service_role;
 
 -- Profiles: users can read and update only their own profile.
 drop policy if exists "Users can read their own profile" on public.profiles;
