@@ -63,17 +63,11 @@ class FakeAnalyzer:
 
 class FastAPITests(unittest.TestCase):
     def test_testing_ocr_factory_uses_memory_bounded_models(self):
-        class FakePaddleOCR:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        with patch("paddleocr.PaddleOCR", FakePaddleOCR):
+        with patch("services.rapidocr_adapter.RapidOCRAdapter") as adapter:
             ocr = _testing_ocr_factory()
 
-        self.assertEqual(ocr.kwargs["text_detection_model_name"], "PP-OCRv5_mobile_det")
-        self.assertEqual(ocr.kwargs["text_recognition_model_name"], "en_PP-OCRv5_mobile_rec")
-        self.assertEqual(ocr.kwargs["cpu_threads"], 1)
-        self.assertFalse(ocr.kwargs["enable_mkldnn"])
+        self.assertIs(ocr, adapter.return_value)
+        adapter.assert_called_once_with()
 
     def test_health_does_not_touch_analyzer(self):
         analyzer = FakeAnalyzer(error=AssertionError("must not run"))

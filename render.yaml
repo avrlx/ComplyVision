@@ -5,7 +5,7 @@ services:
     plan: free
     branch: complyvision-testing
     region: singapore
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt && COMPLYVISION_APP_ENV=testing python -c "from api.main import _testing_ocr_factory; _testing_ocr_factory()"
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     autoDeployTrigger: commit

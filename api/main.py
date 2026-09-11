@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from services.analyzer import PackageAnalysisError, PackageAnalyzer
 
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("uvicorn.error")
 SERVICE_NAME = "SIH26034 Legal Metrology AI"
 DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 CHUNK_SIZE = 1024 * 1024
@@ -29,18 +29,13 @@ SUPPORTED_UPLOADS = {
 
 
 def _testing_ocr_factory() -> Any:
-    """Use the small OCR models that fit the testing service's memory limit."""
-    from paddleocr import PaddleOCR
+    """Use the memory-bounded OCR engine for the free testing service."""
+    from services.rapidocr_adapter import RapidOCRAdapter
 
-    return PaddleOCR(
-        text_detection_model_name="PP-OCRv5_mobile_det",
-        text_recognition_model_name="en_PP-OCRv5_mobile_rec",
-        use_doc_orientation_classify=False,
-        use_doc_unwarping=False,
-        use_textline_orientation=False,
-        enable_mkldnn=False,
-        cpu_threads=1,
-    )
+    started = time.perf_counter()
+    adapter = RapidOCRAdapter()
+    LOGGER.info("Testing OCR initialized in %.2fs", time.perf_counter() - started)
+    return adapter
 
 
 def _default_analyzer() -> PackageAnalyzer:
