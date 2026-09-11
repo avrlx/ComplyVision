@@ -28,6 +28,27 @@ SUPPORTED_UPLOADS = {
 }
 
 
+def _testing_ocr_factory() -> Any:
+    """Use the small OCR models that fit the testing service's memory limit."""
+    from paddleocr import PaddleOCR
+
+    return PaddleOCR(
+        text_detection_model_name="PP-OCRv5_mobile_det",
+        text_recognition_model_name="en_PP-OCRv5_mobile_rec",
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        use_textline_orientation=False,
+        enable_mkldnn=False,
+        cpu_threads=1,
+    )
+
+
+def _default_analyzer() -> PackageAnalyzer:
+    if os.getenv("COMPLYVISION_APP_ENV") == "testing":
+        return PackageAnalyzer(ocr_factory=_testing_ocr_factory)
+    return PackageAnalyzer()
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
@@ -62,7 +83,7 @@ def create_app(analyzer: PackageAnalyzer | None = None) -> FastAPI:
             "Responses are not official compliance certificates."
         ),
     )
-    app.state.analyzer = analyzer or PackageAnalyzer()
+    app.state.analyzer = analyzer or _default_analyzer()
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_frontend_origins(),
@@ -111,6 +132,7 @@ def create_app(analyzer: PackageAnalyzer | None = None) -> FastAPI:
                 if cv2.imread(str(temporary_path)) is None:
                     raise HTTPException(status_code=400, detail="Uploaded file is not a valid image")
                 analyzer_service: PackageAnalyzer = request.app.state.analyzer
+                LOGGER.info("Package analysis started (bytes=%d)", total_bytes)
                 report = await run_in_threadpool(
                     analyzer_service.analyze_package,
                     temporary_path,
