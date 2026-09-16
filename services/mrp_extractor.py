@@ -90,10 +90,41 @@ def correct_mrp(fields: dict[str, Any] | None) -> dict[str, Any]:
     """Replace a suspicious MRP extraction when OCR contains stronger evidence."""
     result = dict(fields or {})
     current = result.get("mrp")
-    if isinstance(current, dict) and current.get("confidence", 0) >= 0.82:
-        return result
     items = _items(result)
     if not items:
+        return result
+
+    labels = [item for item in items if MRP_LABEL.search(item["text"])]
+    stamped = []
+    for item in items:
+        match = re.search(
+            r"(?:₹|￥|\bRS\.?\b|\bINR\b)?\s*(\d{2,5}\.\d{2})\s*[,.;#]+\s*#?(?:0?[1-9]|1[0-2])[-/]\d{2}\b",
+            item["text"],
+            re.I,
+        )
+        if match and not UNIT_PRICE.search(item["text"]):
+            stamped.append((item["confidence"], item, float(match.group(1))))
+    if labels and stamped:
+        _, candidate, amount = max(stamped, key=lambda entry: entry[0])
+        label = labels[0]
+        result["mrp"] = {
+            "currency": "INR",
+            "value": amount,
+            "inclusive_of_all_taxes": bool(re.search(
+                r"(?:INCLUSIVE|INCL\.?)\s*(?:OF)?\s+ALL\s+TAXES",
+                " ".join(item["text"] for item in items),
+                re.I,
+            )),
+            "label_text": label.get("raw_text", label["text"]),
+            "label_box": label.get("box"),
+            "confidence": candidate["confidence"],
+            "source_text": candidate.get("raw_text", candidate["text"]),
+            "source_box": candidate.get("box"),
+            "source_image": candidate.get("source_image"),
+            "extraction_method": "stamped_mrp_date_pair",
+        }
+        return result
+    if isinstance(current, dict) and current.get("confidence", 0) >= 0.82:
         return result
 
     best: tuple[float, dict[str, Any], float, dict[str, Any]] | None = None

@@ -48,7 +48,7 @@ export function validStoredReport(v: unknown): v is CanonicalReport {
       ["id", "type", "label", "mime_type", "data_url"].every(key => typeof image[key] === "string") && /^data:image\/(png|jpeg);base64,/.test(String(image.data_url)))));
 }
 export function productName(report: CanonicalReport): string | null {
-  const value = report.extracted_fields.product?.normalized_value;
+  const value = report.extracted_fields.product_name?.normalized_value ?? report.extracted_fields.product?.normalized_value;
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const name = value.name ?? value.value;

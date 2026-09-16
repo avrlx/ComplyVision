@@ -79,6 +79,27 @@ class ExtractionRegressionTests(unittest.TestCase):
         self.assertEqual(result["consumer_care"]["email"], "care@abcpersonalcare.in")
         self.assertEqual(result["country_of_origin"], "India")
 
+    def test_consumer_care_accepts_spaced_phone_without_changing_email(self):
+        items = [
+            {"text": "Consumer Care", "confidence": 0.99, "box": [0, 0, 180, 20]},
+            {"text": "+91 98765 43210", "confidence": 0.97, "box": [0, 25, 180, 45]},
+            {"text": "Email: care@freshkartfoods.in", "confidence": 1.0, "box": [0, 50, 280, 70]},
+        ]
+
+        result = extract_fields(items)["consumer_care"]
+
+        self.assertEqual(result["phone"], "+91 98765 43210")
+        self.assertEqual(result["email"], "care@freshkartfoods.in")
+
+    def test_consumer_care_keeps_previously_supported_phone_formats(self):
+        for phone in ("1800-123-4567", "+91 1800-123-4567", "0124-4362552", "9876543210"):
+            with self.subTest(phone=phone):
+                items = [
+                    {"text": "Customer Care", "confidence": 0.99, "box": [0, 0, 180, 20]},
+                    {"text": phone, "confidence": 0.98, "box": [0, 25, 180, 45]},
+                ]
+                self.assertEqual(extract_fields(items)["consumer_care"]["phone"], phone)
+
     def test_same_line_quantity_formats(self):
         cases = {
             "Net Vol: 250 ml": (250.0, "ML"),
@@ -188,6 +209,31 @@ class ExtractionRegressionTests(unittest.TestCase):
         self.assertEqual(result["manufacturer"]["name"], "ACME GLOBAL FOODS PRIVATE LIMITED")
         self.assertEqual(result["manufacturer"]["address"], "Plot 4 Industrial Area, Delhi-110001")
         self.assertEqual(result["mrp"]["value"], 99.0)
+
+    def test_mfd_by_is_manufacturer_header_not_date_label(self):
+        lines = [
+            "Mfd.by:",
+            "DABUR INDIA LTD.,",
+            "Lane No. 03, Phase II,",
+            "SIDCO Industrial Complex,",
+            "Bari Brahmana, Samba,",
+            "J & K, India, 181133",
+            "MRP Rs. (incl., of all taxes),",
+            "Batch No., Mfd., Use before",
+            "そ92",
+            "(₹ 0.37/ml)",
+        ]
+        items = [
+            {"text": text, "confidence": 0.96, "box": [0, i * 30, 300, i * 30 + 24]}
+            for i, text in enumerate(lines)
+        ]
+
+        result = extract_fields(items)
+
+        self.assertEqual(result["manufacturer"]["name"], "DABUR INDIA LTD.")
+        self.assertIn("SIDCO Industrial Complex", result["manufacturer"]["address"])
+        self.assertEqual(result["mrp"]["value"], 92.0)
+        self.assertEqual(result["mrp"]["source_text"], "そ92")
 
     def test_tax_inclusive_ocr_spacing_variants(self):
         for phrase in (

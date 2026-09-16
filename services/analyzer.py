@@ -33,15 +33,13 @@ CORE_FIELDS = (
 def _default_ocr_factory() -> Any:
     from paddleocr import PaddleOCR
 
-    # This application analyzes mostly upright product labels. Disable the
-    # document-level orientation/unwarping models so the normal request path
-    # loads only the OCR detection/recognition models it actually needs.
-    # PaddleOCR documents these switches as supported pipeline parameters.
+    # Preserve PaddleOCR's orientation handling because phone-captured packages
+    # are frequently sideways. Perspective unwarping remains disabled.
     return PaddleOCR(
         lang="en",
-        use_doc_orientation_classify=False,
+        use_doc_orientation_classify=True,
         use_doc_unwarping=False,
-        use_textline_orientation=False,
+        use_textline_orientation=True,
         enable_mkldnn=False,
     )
 
@@ -71,9 +69,41 @@ def _needs_ocr_verification(fields: dict[str, Any]) -> bool:
     missing_or_weak = 0
     for name in CORE_FIELDS:
         value = fields.get(name)
-        if not _has_value(value) or _confidence(value) < 0.82:
+        consumer_phone_missing = (
+            name == "consumer_care"
+            and isinstance(value, dict)
+            and not value.get("phone")
+        )
+        if not _has_value(value) or _confidence(value) < 0.82 or consumer_phone_missing:
             missing_or_weak += 1
     return missing_or_weak > 0
+
+
+def _merge_consumer_care(
+    current: dict[str, Any], candidate: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill missing contact details without replacing prior OCR evidence."""
+    merged = dict(current)
+    added = False
+    for key in ("phone", "email"):
+        if not merged.get(key) and candidate.get(key):
+            merged[key] = candidate[key]
+            added = True
+    if not added:
+        return merged
+
+    source_lines = list(current.get("source_lines") or [])
+    source_lines.extend(candidate.get("source_lines") or [])
+    if source_lines:
+        merged["source_lines"] = list(dict.fromkeys(source_lines))
+
+    confidences = [
+        value for value in (_confidence(current), _confidence(candidate))
+        if value >= 0
+    ]
+    if confidences:
+        merged["confidence"] = round(min(confidences), 3)
+    return merged
 
 
 def _merge_field_candidates(primary: dict[str, Any], ensemble: dict[str, Any]) -> dict[str, Any]:
@@ -83,6 +113,9 @@ def _merge_field_candidates(primary: dict[str, Any], ensemble: dict[str, Any]) -
         if name == "ocr_evidence" or not isinstance(candidate, dict):
             continue
         current = merged.get(name)
+        if name == "consumer_care" and isinstance(current, dict):
+            merged[name] = _merge_consumer_care(current, candidate)
+            continue
         if current and (not isinstance(current, dict) or _confidence(current) >= 0.82):
             continue
         if not isinstance(current, dict) or _confidence(candidate) > _confidence(current):
@@ -144,6 +177,7 @@ class PackageAnalyzer:
                         ocr,
                         debug_path=glyph_debug_path,
                     )
+                    analysis_path = Path(batch_result.get("analysis_image_path") or path)
 
                     primary_fields = enhance_extracted_fields(
                         batch_result.get("extracted_fields") or {}
@@ -155,7 +189,7 @@ class PackageAnalyzer:
                         primary_items = primary_fields.get("ocr_evidence") or []
                         ensemble_items, ensemble_meta = run_ocr_ensemble(
                             ocr,
-                            str(path),
+                            str(analysis_path),
                             primary_items=primary_items,
                         )
                     else:
@@ -171,7 +205,7 @@ class PackageAnalyzer:
 
                 if batch_result.get("failure_stage") == "unexpected_exception":
                     raise PackageAnalysisError("The analysis pipeline failed unexpectedly")
-                evidence_images = self._evidence_builder(path, batch_result, evidence_root)
+                evidence_images = self._evidence_builder(analysis_path, batch_result, evidence_root)
             safe_result = scrub_local_paths(batch_result)
             safe_result["evidence_images"] = evidence_images
             safe_result["image"] = Path(display_filename).name

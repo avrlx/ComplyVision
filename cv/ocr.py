@@ -38,6 +38,7 @@ def predict_ocr_items(
     image: str | Any,
     *,
     offset: tuple[int, int] = (0, 0),
+    prediction_metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Normalize PaddleOCR lines and retain word-level geometry when available."""
     try:
@@ -46,6 +47,11 @@ def predict_ocr_items(
         predictions = ocr.predict(image)
     items: list[dict[str, Any]] = []
     for prediction in predictions:
+        if prediction_metadata is not None and "orientation_angle" not in prediction_metadata:
+            preprocessor = prediction.get("doc_preprocessor_res")
+            if preprocessor is not None:
+                prediction_metadata["orientation_angle"] = int(preprocessor.get("angle", 0) or 0)
+                prediction_metadata["oriented_image"] = preprocessor.get("output_img")
         texts = prediction.get("rec_texts")
         scores = prediction.get("rec_scores")
         boxes = prediction.get("rec_boxes")

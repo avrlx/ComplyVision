@@ -6,9 +6,11 @@ import re
 from datetime import datetime
 from typing import Any
 
+from product_name_extractor import extract_product_identity
+
 MRP_LABEL = re.compile(r"\b(?:M\s*\.?\s*R\s*\.?\s*P\.?|MAX(?:IMUM)?\s+RETAIL\s+PRICE|RETAIL\s+SALE\s+PRICE)\b", re.I)
-MFG_LABEL = re.compile(r"\b(?:MFG\.?\s*DATE|MFD\.?\s*DATE|MANUFACTURE(?:D)?\s*DATE|DATE\s+OF\s+MANUFACTURE|MONTH\s*&\s*YEAR\s+OF\s+MANUFACTURE|PACKED\s+ON|PKD)\b", re.I)
-USE_BY_LABEL = re.compile(r"\b(?:USE\s+BY|BEST\s+BEFORE|EXP(?:IRY)?)\b", re.I)
+MFG_LABEL = re.compile(r"\b(?:MFG\.?(?:\s*DATE)?|MFD\.?(?:\s*DATE)?|MANUFACTURE(?:D)?\s*DATE|DATE\s+OF\s+MANUFACTURE|MONTH\s*&\s*YEAR\s+OF\s+MANUFACTURE|PACKED\s+ON|PKD)\b", re.I)
+USE_BY_LABEL = re.compile(r"\b(?:USE\s+(?:BY|BEFORE)|BEST\s+BEFORE|EXP(?:IRY)?)\b", re.I)
 GENERIC_LABEL = re.compile(r"^\s*(?:COMMON\s+(?:OR\s+)?GENERIC\s+NAME|GENERIC\s+NAME|COMMON\s+NAME|NAME\s+OF\s+COMMODITY)\s*[:;.-]*\s*(.*)$", re.I)
 UNIT_PRICE = re.compile(r"\b(?:USP|UNIT\s+SALE\s+PRICE)\b|\bPER\s+(?:G|KG|ML|L|CM|M|NUMBER|NO\.?|PIECE|UNIT)\b", re.I)
 PRICE = re.compile(r"(?:₹|\bRS\.?\b|\bINR\b)?\s*(\d{1,6}(?:\.\d{1,2})?)\s*(?:/-)?", re.I)
@@ -35,6 +37,19 @@ def _ev(item: dict[str, Any], method: str, confidence: float | None = None) -> d
 
 
 def _date_value(text: str) -> tuple[str, str] | None:
+    compact = re.search(r"(?<!\d)([0-3]\d)(0?[1-9]|1[0-2])[-/](\d{2})(?!\d)", text)
+    if compact:
+        day, month, year = map(int, compact.groups())
+        year += 2000 if year < 70 else 1900
+        try:
+            return compact.group(0), datetime(year, month, day).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+    short_month = re.search(r"(?:^|[#,.;])\s*(0?[1-9]|1[0-2])[-/](\d{2})(?!\d)", text)
+    if short_month:
+        year = int(short_month.group(2))
+        year += 2000 if year < 70 else 1900
+        return short_month.group(0).lstrip("#,.; "), f"{year:04d}-{int(short_month.group(1)):02d}"
     match = DATE.search(text)
     if not match:
         return None
@@ -54,19 +69,34 @@ def _extract_labeled_date(items: list[dict[str, Any]], label_re: re.Pattern[str]
     for i, label in enumerate(items):
         if not label_re.search(label["text"]):
             continue
-        for offset in range(0, 8):
-            for j in ([i] if offset == 0 else (i - offset, i + offset)):
-                if not 0 <= j < len(items):
-                    continue
-                candidate = items[j]
-                if label_re is MFG_LABEL and USE_BY_LABEL.search(candidate["text"]):
-                    continue
-                if label_re is USE_BY_LABEL and MFG_LABEL.search(candidate["text"]):
-                    continue
-                parsed = _date_value(candidate["text"])
-                if parsed:
-                    raw, normalized = parsed
-                    return {"raw": raw, "normalized": normalized, "type": "expiry_date" if label_re is USE_BY_LABEL else "manufacture_date", "label_text": label["raw_text"], "label_box": label.get("box"), **_ev(candidate, "explicit_date_label_semantic_window")}
+        combined = bool(MFG_LABEL.search(label["text"]) and USE_BY_LABEL.search(label["text"]))
+        candidate_indices = list(range(len(items))) if combined else [
+            j for offset in range(0, 8)
+            for j in ([i] if offset == 0 else (i - offset, i + offset))
+            if 0 <= j < len(items)
+        ]
+        candidates = []
+        for j in candidate_indices:
+            candidate = items[j]
+            if label_re is MFG_LABEL and USE_BY_LABEL.search(candidate["text"]):
+                continue
+            if label_re is USE_BY_LABEL and MFG_LABEL.search(candidate["text"]):
+                continue
+            parsed = _date_value(candidate["text"])
+            if not parsed:
+                continue
+            raw, normalized = parsed
+            score = candidate["confidence"] * 10 - abs(j - i) * (0.1 if combined else 1.0)
+            if combined and label_re is MFG_LABEL:
+                score += 15 if re.search(r"\d{2,5}\.\d{2}\s*[,.;#]", candidate["text"]) else 0
+                score += 4 if len(normalized) == 7 else 0
+            if combined and label_re is USE_BY_LABEL:
+                score += 15 if len(normalized) == 10 else 0
+                score += 4 if re.search(r"[A-Za-z]+\d+", candidate["text"]) else 0
+            candidates.append((score, candidate, raw, normalized))
+        if candidates:
+            _, candidate, raw, normalized = max(candidates, key=lambda entry: entry[0])
+            return {"raw": raw, "normalized": normalized, "type": "expiry_date" if label_re is USE_BY_LABEL else "manufacture_date", "label_text": label["raw_text"], "label_box": label.get("box"), **_ev(candidate, "explicit_date_label_semantic_window")}
     return None
 
 
@@ -195,14 +225,23 @@ def enhance_extracted_fields(fields: dict[str, Any] | None) -> dict[str, Any]:
     items = _items(result)
     if not items:
         return result
-    product = _extract_product(items)
-    generic = _extract_generic_name(items, product)
+    identity = extract_product_identity(items)
+    product_name = identity["product_name"]
+    product = identity["product"]
+    generic = _extract_generic_name(items, product_name)
     mrp = _extract_mrp(items)
     if mrp:
         full_text = "\n".join(item["text"] for item in items)
         if re.search(r"(?:INCLUSIVE\s+OF|INCL\.?\s+OF)\s+ALL\s+TAXES", full_text, re.I):
             mrp["inclusive_of_all_taxes"] = True
-    candidates = {"product": product, "common_generic_name": generic, "mrp": mrp, "manufacture_date": _extract_labeled_date(items, MFG_LABEL), "use_by_date": _extract_labeled_date(items, USE_BY_LABEL), "unit_sale_price": _extract_unit_sale_price(items)}
+    if identity["brand_name"] is not None:
+        result["brand_name"] = identity["brand_name"]
+    result["product_name_status"] = identity["status"]
+    if product_name is not None:
+        result["product_name"] = product_name
+    if product is not None:
+        result["product"] = product
+    candidates = {"common_generic_name": generic, "mrp": mrp, "manufacture_date": _extract_labeled_date(items, MFG_LABEL), "use_by_date": _extract_labeled_date(items, USE_BY_LABEL), "unit_sale_price": _extract_unit_sale_price(items)}
     for key, value in candidates.items():
         if value is None:
             continue

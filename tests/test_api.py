@@ -8,6 +8,9 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from api.main import SERVICE_NAME, _testing_ocr_factory, create_app
+from extract_fields import extract_fields
+from reporting.report import build_package_report
+from services.declaration_extractor import enhance_extracted_fields
 from services.analyzer import PackageAnalysisError
 
 
@@ -83,6 +86,34 @@ class FastAPITests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), expected)
+
+    def test_product_identity_reaches_the_api_response(self):
+        fields = enhance_extracted_fields(extract_fields([
+            {
+                "text": "Himalaya Cocoa Butter Intensive Serum Body Lotion",
+                "confidence": 0.99,
+                "box": [40, 40, 900, 100],
+            },
+        ]))
+        report = build_package_report({
+            "image": "package.png",
+            "extracted_fields": fields,
+            "ocr": {"success": True},
+            "image_quality": {"usable": True, "issues": [], "warnings": []},
+        })
+
+        response = TestClient(create_app(FakeAnalyzer(report))).post(
+            "/analyze", files={"file": ("package.png", _png_bytes(), "image/png")}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        returned = response.json()["extracted_fields"]
+        self.assertEqual(returned["brand_name"]["normalized_value"]["value"], "Himalaya")
+        self.assertEqual(
+            returned["product_name"]["normalized_value"]["value"],
+            "Cocoa Butter Intensive Serum Body Lotion",
+        )
+        self.assertEqual(returned["product"]["normalized_value"]["value"], "Body Lotion")
 
     def test_missing_file_is_rejected(self):
         response = TestClient(create_app(FakeAnalyzer())).post("/analyze")
