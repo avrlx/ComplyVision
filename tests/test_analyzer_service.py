@@ -2,10 +2,64 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.analyzer import PackageAnalysisError, PackageAnalyzer
+from services.analyzer import (
+    PackageAnalysisError,
+    PackageAnalyzer,
+    _merge_field_candidates,
+    _needs_ocr_verification,
+)
 
 
 class AnalyzerServiceTests(unittest.TestCase):
+    def test_email_only_consumer_care_still_requests_ocr_verification(self):
+        fields = {
+            name: {"value": "present", "confidence": 0.99}
+            for name in ("manufacturer", "product", "net_quantity", "manufacture_date", "mrp")
+        }
+        fields["consumer_care"] = {
+            "phone": None,
+            "email": "care@freshkartfoods.in",
+            "normalized_value": {
+                "phone": None,
+                "email": "care@freshkartfoods.in",
+            },
+            "confidence": 1.0,
+        }
+
+        self.assertTrue(_needs_ocr_verification(fields))
+
+        fields["consumer_care"]["phone"] = "+91 98765 43210"
+        fields["consumer_care"]["normalized_value"]["phone"] = "+91 98765 43210"
+        self.assertFalse(_needs_ocr_verification(fields))
+
+    def test_consumer_care_merge_fills_phone_and_preserves_email(self):
+        primary = {
+            "consumer_care": {
+                "phone": None,
+                "email": "care@freshkartfoods.in",
+                "confidence": 1.0,
+                "source_lines": ["Email: care@freshkartfoods.in"],
+            }
+        }
+        ensemble = {
+            "consumer_care": {
+                "phone": "+91 98765 43210",
+                "email": None,
+                "confidence": 0.96,
+                "source_lines": ["Phone: +91 98765 43210"],
+            }
+        }
+
+        merged = _merge_field_candidates(primary, ensemble)["consumer_care"]
+
+        self.assertEqual(merged["phone"], "+91 98765 43210")
+        self.assertEqual(merged["email"], "care@freshkartfoods.in")
+        self.assertEqual(merged["confidence"], 0.96)
+        self.assertEqual(
+            merged["source_lines"],
+            ["Email: care@freshkartfoods.in", "Phone: +91 98765 43210"],
+        )
+
     def test_ocr_instance_is_lazy_and_reused_with_request_local_evidence(self):
         calls = {"factory": 0, "processor": 0}
         evidence_directories = []

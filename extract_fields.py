@@ -8,6 +8,8 @@ import re
 from datetime import datetime
 from typing import Any, Iterable
 
+from product_name_extractor import extract_product_identity
+
 
 QUANTITY_UNITS = {
     "PCS": "N", "PC": "N", "PIECE": "N", "PIECES": "N",
@@ -22,7 +24,7 @@ MRP_LABEL_RE = re.compile(
     r"\b(?:M\s*\.?\s*R\s*\.?\s*P\.?|MAX(?:IMUM)?\s+RETAIL\s+PRICE|RETAIL\s+SALE\s+PRICE)\b", re.I
 )
 DATE_LABEL_RE = re.compile(r"\b(?:MFD|MFG|MTD|MANUFACTURE|MANUFACTURING|PACKED\s+ON|PKD)\b", re.I)
-EXPIRY_LABEL_RE = re.compile(r"\b(?:EXP|EXPIRY|USE\s+BY|BEST\s+BEFORE)\b", re.I)
+EXPIRY_LABEL_RE = re.compile(r"\b(?:EXP|EXPIRY|USE\s+(?:BY|BEFORE)|BEST\s+BEFORE)\b", re.I)
 PRODUCT_LABEL_RE = re.compile(
     r"^(?:PRODUCT(?:\s+NAME)?|NAME\s+OF\s+COMMODITY|COMMON\s+NAME|GENERIC\s+NAME|CONTENTS)\s*[:;.-]*\s*(.*)$", re.I
 )
@@ -30,8 +32,8 @@ LICENSE_RE = re.compile(
     r"\b(?:F\s*S\s*S\s*A\s*I|F\s*S\s*S\s*A|S\s*S\s*A\s*I)\s*(?:NO)?\b|\b(?:LIC|LICENSE)\s*(?:NO)?\b", re.I
 )
 ROLE_HEADER_RE = re.compile(
-    r"\b(?:MANUFACTURED|MANUFACTURER|MFD|PACKED|PACKER|MARKETED|DISTRIBUTED|IMPORTED|IMPORTER)"
-    r"(?:\s*/?\s*LICENSED)?(?:\s*(?:&|AND|/)\s*(?:MANUFACTURED|PACKED|MARKETED|DISTRIBUTED|IMPORTED))?\s*(?:BY)?\b", re.I
+    r"\b(?:MANUFACTURED|MANUFACTURER|MFD|MFG|PACKED|PACKER|MARKETED|DISTRIBUTED|IMPORTED|IMPORTER)"
+    r"(?:\s*/?\s*LICENSED)?(?:\s*(?:&|AND|/)\s*(?:MANUFACTURED|PACKED|MARKETED|DISTRIBUTED|IMPORTED))?\.?\s*(?:BY)?\b", re.I
 )
 COMPANY_INDICATORS = (
     "PVT", "PRIVATE", "LTD", "LIMITED", "LLP", "INDUSTRIES", "FOODS",
@@ -48,7 +50,7 @@ SECTION_STOP_RE = re.compile(
     r"BEST\s+BEFORE|EXPIRY|SIZE|STYLE|COLOU?R|PRODUCT)\b", re.I
 )
 DECLARATION_SECTION_RE = re.compile(
-    r"^\s*(?:MONTH\s*&\s*YEAR|MANUFACTURE\s+DATE|DATE\s+OF\s+MANUFACTURE|MFD\b|MFG\b|"
+    r"^\s*[^A-Za-z0-9]*(?:MONTH\s*&\s*YEAR|MANUFACTURE\s+DATE|DATE\s+OF\s+MANUFACTURE|MFD(?!\.?\s*BY)\b|MFG(?!\.?\s*BY)\b|"
     r"NET\s*(?:QUANTITY|QTY|WT|WEIGHT|VOL|VOLUME)\b|M\s*\.?R\s*\.?P\b|BATCH\b|STYLE\b|SIZE\b|COLOU?R\b|"
     r"PRODUCT\b|CUSTOMER\s+CARE\b|BEST\s+BEFORE\b|EXPIRY\b)", re.I
 )
@@ -324,6 +326,14 @@ def _parse_mrp(text: str) -> float | None:
     return amount if 0 < amount < 100000 else None
 
 
+def _has_ocr_currency_prefix(text: str) -> bool:
+    """Accept a single corrupted non-ASCII currency glyph before an amount."""
+    return bool(re.fullmatch(
+        r"\s*[^A-Za-z0-9\s./-]{1,3}\s*\d{1,5}(?:\.\d{1,2})?\s*(?:/-)?\s*",
+        text,
+    ))
+
+
 def _includes_all_taxes(text: str) -> bool:
     compact = re.sub(r"[\W_]+", "", text).lower()
     return "inclusiveofalltaxes" in compact or "inclofalltaxes" in compact
@@ -350,8 +360,10 @@ def _extract_mrp(items: list[dict[str, Any]]) -> dict[str, Any] | None:
         for candidate_index in candidate_indices:
             candidate = items[candidate_index]
             candidate_text = candidate["text"].strip()
-            if not re.search(r"₹|\bRS\.?\b|\bINR\b|/-", candidate_text, re.I) and not re.fullmatch(
-                r"\d{1,5}(?:\.\d{1,2})?", candidate_text
+            if (
+                not re.search(r"₹|\bRS\.?\b|\bINR\b|/-", candidate_text, re.I)
+                and not re.fullmatch(r"\d{1,5}(?:\.\d{1,2})?", candidate_text)
+                and not _has_ocr_currency_prefix(candidate_text)
             ):
                 continue
             amount = _parse_mrp(candidate["text"])
@@ -387,6 +399,15 @@ def _parse_date(text: str) -> tuple[str, str, str] | None:
         except ValueError:
             return None
         return numeric.group(0), normalized, "manufacture_date"
+    compact_numeric = re.search(r"(?<!\d)([0-3]\d)(0?[1-9]|1[0-2])[-/](\d{2})(?!\d)", text)
+    if compact_numeric:
+        day, month, year = map(int, compact_numeric.groups())
+        year += 2000 if year < 70 else 1900
+        try:
+            normalized = datetime(year, month, day).strftime("%Y-%m-%d")
+        except ValueError:
+            return None
+        return compact_numeric.group(0), normalized, "manufacture_date"
     month_year = re.search(r"\b(" + "|".join(MONTHS) + r")\s+(\d{4})\b", text, re.I)
     if month_year:
         month = MONTHS[month_year.group(1).upper()]
@@ -405,9 +426,16 @@ def _parse_date(text: str) -> tuple[str, str, str] | None:
 def _extract_manufacture_date(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     scored = []
     for label_index, label in enumerate(items):
-        if not DATE_LABEL_RE.search(label["text"]) or EXPIRY_LABEL_RE.search(label["text"]):
+        combined_declaration = bool(
+            DATE_LABEL_RE.search(label["text"])
+            and EXPIRY_LABEL_RE.search(label["text"])
+            and re.search(r"\b(?:BATCH|B\s*\.\s*NO)\b", label["text"], re.I)
+        )
+        if not DATE_LABEL_RE.search(label["text"]) or (EXPIRY_LABEL_RE.search(label["text"]) and not combined_declaration):
             continue
         candidate_indices = [label_index, *_candidate_indices(items, label_index, radius=5)]
+        if combined_declaration:
+            candidate_indices.extend(index for index in range(len(items)) if index not in candidate_indices)
         candidate_indices.extend(
             index for index, item in enumerate(items)
             if item.get("recovered_from_declaration_crop") and index not in candidate_indices
@@ -428,11 +456,13 @@ def _extract_manufacture_date(items: list[dict[str, Any]]) -> dict[str, Any] | N
 
 
 def _roles_for_header(text: str) -> set[str]:
-    if DECLARATION_SECTION_RE.search(text) or not ROLE_HEADER_RE.search(text):
+    made_in_by = bool(re.search(r"\bMADE\s+IN\s+[A-Z ]+\s+BY\s*:?\s*$", text, re.I))
+    if DECLARATION_SECTION_RE.search(text) or (not ROLE_HEADER_RE.search(text) and not made_in_by):
         return set()
     upper = text.upper()
     roles = set()
-    if re.search(r"MANUFACT|\bMFD\b", upper): roles.add("manufacturer")
+    if made_in_by: roles.add("manufacturer")
+    if re.search(r"MANUFACT|\bMF[DG]\b", upper): roles.add("manufacturer")
     if re.search(r"PACKED|PACKER", upper): roles.add("packer")
     if re.search(r"MARKETED|DISTRIBUTED", upper): roles.add("marketer")
     if re.search(r"IMPORTED|IMPORTER", upper): roles.add("importer")
@@ -470,6 +500,8 @@ def _split_name_address(lines: list[dict[str, Any]]) -> tuple[str, str, list[dic
     if name_index > 0:
         prefix = useful[name_index - 1]["text"]
         if (
+            re.search(r"[A-Za-z]{3}", prefix)
+            and
             not _looks_like_address(prefix)
             and not ROLE_HEADER_RE.search(prefix)
             and not DECLARATION_SECTION_RE.search(prefix)
@@ -491,6 +523,8 @@ def _split_name_address(lines: list[dict[str, Any]]) -> tuple[str, str, list[dic
         name = name[:split.start()].strip(" ,")
     for line in useful[next_index:]:
         if ROLE_HEADER_RE.search(line["text"]) or SECTION_STOP_RE.search(line["text"]) or LICENSE_RE.search(line["text"]):
+            break
+        if re.search(r"\b(?:TM\s+OWNERS?|REGN\.?\s+NO|M\s*\.\s*L\s*\.\s*NO|MINIMUM\s+THICKNESS)\b", line["text"], re.I):
             break
         if _looks_like_address(line["text"]) or address_parts:
             address_parts.append(line["text"])
@@ -538,7 +572,11 @@ def _extract_organizations(items: list[dict[str, Any]]) -> dict[str, dict[str, A
 def _extract_consumer_care(items: list[dict[str, Any]]) -> dict[str, Any]:
     email_re = re.compile(r"[A-Za-z0-9._%+-]+\s*@\s*[A-Za-z0-9.-]+\s*\.\s*[A-Za-z]{2,}")
     phone_re = re.compile(
-        r"(?<!\d)(?:\+91[\s-]?)?(?:1800[\s-]?\d{3}[\s-]?\d{4}|0\d{2,4}[\s-]\d{6,8}|[6-9]\d{9})(?!\d)"
+        r"(?<!\d)(?:"
+        r"(?:\+?\s*91[\s().-]*)?1800(?:[\s.-]*\d){7,9}|"
+        r"(?:\+?\s*91[\s().-]*)?[6-9]\d(?:[\s.-]*\d){8}|"
+        r"(?:\+?\s*91[\s().-]*)?\(?0\d{1,4}\)?[\s.-]*\d(?:[\s.-]*\d){5,7}"
+        r")(?![\s.-]*\d)"
     )
     care_indices = [i for i, item in enumerate(items) if CARE_HEADER_RE.search(item["text"])]
     search_items = [entry for index in care_indices for entry in items[index:index + 14]] if care_indices else items
@@ -645,14 +683,18 @@ def extract_company_section(ocr_items, section_headers, start_index=None):
 def extract_fields(ocr_items):
     items = _prepare_items(ocr_items)
     organizations = _extract_organizations(items)
-    product, _ = _extract_labeled_text(items, PRODUCT_LABEL_RE)
-    if product is None:
-        product = _infer_unlabeled_product(items)
+    identity = extract_product_identity(items)
+    product_name = identity["product_name"]
+    product = product_name.get("value") if isinstance(product_name, dict) else None
     full_text = "\n".join(item["text"] for item in items)
     country_match = re.search(r"(?:MADE\s+IN|COUNTRY\s+OF\s+ORIGIN\s*[:\-]?)\s+([A-Z][A-Z ]{1,30})", full_text, re.I)
-    country = country_match.group(1).strip().title() if country_match else None
+    country = re.sub(r"\s+BY\s*$", "", country_match.group(1), flags=re.I).strip().title() if country_match else None
     result = {
-        "product": product, "colour": None, "net_quantity": _extract_quantity(items), "size": None,
+        # Keep the legacy raw extractor shape; the enhancement pass replaces
+        # this with the evidence-bearing commodity field from the same identity.
+        "product": product, "product_name": product_name, "brand_name": identity["brand_name"],
+        "product_name_status": identity["status"], "colour": None,
+        "net_quantity": _extract_quantity(items), "size": None,
         "mrp": _extract_mrp(items), "manufacture_date": _extract_manufacture_date(items),
         **organizations, "consumer_care": _extract_consumer_care(items), "country_of_origin": country,
         "ocr_evidence": [

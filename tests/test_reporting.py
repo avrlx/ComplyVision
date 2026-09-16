@@ -134,6 +134,15 @@ class ReportingTests(unittest.TestCase):
         self.assertIn("MEASUREMENT_NOT_VALIDATED", rule["reason_codes"])
         self.assertTrue(any(item["evidence_type"] == "NUMERAL_HEIGHT_MEASUREMENT" for item in rule["evidence"]))
 
+    def test_good_rule_7_measurement_has_no_review_limitation(self):
+        batch = _batch_result()
+        batch["glyph_measurement"]["measurement_confidence"] = 0.98
+        report = build_package_report(batch)
+        rule = next(item for item in report["rule_results"] if item["rule_id"] == "LM-R7-001")
+        self.assertEqual(rule["status"], "PASS")
+        self.assertEqual(rule["reason_codes"], ["MEASUREMENT_COMPLIANT"])
+        self.assertIsNone(report["evidence"]["numeral_height"]["unresolved_reason"])
+
     def test_contrast_evidence_is_linked(self):
         report = build_package_report(_batch_result())
         rule = next(item for item in report["rule_results"] if item["rule_id"] == "LM-R9-002")

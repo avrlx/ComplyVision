@@ -108,7 +108,7 @@ def _field_entry(field_name: str, value: Any) -> dict[str, Any]:
 def canonicalize_extracted_fields(fields: dict[str, Any] | None) -> dict[str, Any]:
     source = fields or {}
     names = (
-        "product", "net_quantity", "mrp", "manufacture_date", "manufacturer",
+        "product", "product_name", "brand_name", "net_quantity", "mrp", "manufacture_date", "manufacturer",
         "marketer", "packer", "importer", "consumer_care", "country_of_origin",
     )
     result = {name: _field_entry(name, source.get(name)) for name in names}
@@ -267,17 +267,30 @@ def _contrast_evidence(batch_result: dict[str, Any]) -> list[dict[str, Any]]:
 def _measurement_evidence(batch_result: dict[str, Any]) -> dict[str, Any]:
     glyph = batch_result.get("glyph_measurement") or {}
     aruco = batch_result.get("aruco") or {}
+    confidence = glyph.get("measurement_confidence", glyph.get("confidence"))
+    height = glyph.get("estimated_numeral_height_mm")
+    measurement_resolved = (
+        glyph.get("status") == "OK"
+        and isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and math.isfinite(confidence)
+        and confidence >= 0.85
+        and isinstance(height, (int, float))
+        and not isinstance(height, bool)
+        and math.isfinite(height)
+        and height > 0
+    )
     return {
         "evidence_type": "NUMERAL_HEIGHT_MEASUREMENT",
         "measurement_status": glyph.get("status", "REVIEW"),
         "estimated_numeral_height_mm": glyph.get("estimated_numeral_height_mm"),
-        "measurement_confidence": glyph.get("measurement_confidence", glyph.get("confidence")),
-        "confidence": glyph.get("measurement_confidence", glyph.get("confidence")),
+        "measurement_confidence": confidence,
+        "confidence": confidence,
         "calibration_detected": bool(aruco.get("detected")),
         "pixels_per_mm": aruco.get("pixels_per_mm"),
         "validation_status": batch_result.get("validation_status"),
-        "unresolved_reason": (
-            "Physical numeral-height measurement has not been independently validated"
+        "unresolved_reason": None if measurement_resolved else (
+            "Physical numeral-height measurement does not have good-confidence validated evidence"
         ),
     }
 

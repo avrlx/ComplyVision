@@ -10,6 +10,7 @@ import csv
 import json
 import math
 import statistics
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -350,8 +351,10 @@ def _record_failure(result: dict[str, Any], stage: str, reason: str) -> None:
         result["reason"] = reason
 
 
-def _raw_ocr_items(ocr: Any, image_path: str) -> list[dict[str, Any]]:
-    return predict_ocr_items(ocr, image_path)
+def _raw_ocr_items(
+    ocr: Any, image_path: str, prediction_metadata: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    return predict_ocr_items(ocr, image_path, prediction_metadata=prediction_metadata)
 
 
 def process_image(
@@ -367,6 +370,8 @@ def process_image(
 ) -> dict[str, Any]:
     """Process one image without allowing its failure to abort the batch."""
     image = str(image_path)
+    analysis_image = image
+    orientation_directory = None
     result = _empty_result(image)
     try:
         try:
@@ -398,10 +403,26 @@ def process_image(
             _record_failure(result, "aruco", f"ArUco calibration failed: {exc}")
 
         try:
-            raw_items = _raw_ocr_items(ocr, image)
-            recovered_items, recovery = recover_split_quantity_items(image, raw_items, ocr)
+            prediction_metadata: dict[str, Any] = {}
+            raw_items = _raw_ocr_items(ocr, image, prediction_metadata)
+            orientation_angle = prediction_metadata.get("orientation_angle", 0)
+            oriented_image = prediction_metadata.get("oriented_image")
+            if orientation_angle in {90, 180, 270} and isinstance(oriented_image, np.ndarray):
+                if debug_path is not None:
+                    oriented_path = Path(debug_path).with_name("orientation_corrected.png")
+                else:
+                    orientation_directory = tempfile.TemporaryDirectory(prefix="complyvision_orientation_")
+                    oriented_path = Path(orientation_directory.name) / "orientation_corrected.png"
+                if cv2.imwrite(str(oriented_path), oriented_image):
+                    analysis_image = str(oriented_path)
+                    if debug_path is not None:
+                        result["analysis_image_path"] = analysis_image
+                    result["image_quality"] = quality_analyzer(analysis_image)
+                    calibration = aruco_detector(analysis_image, marker_size_mm=MARKER_SIZE_MM)
+                    result["aruco"] = calibration
+            recovered_items, recovery = recover_split_quantity_items(analysis_image, raw_items, ocr)
             recovered_items, declaration_recovery = recover_embossed_declaration_items(
-                image, recovered_items, ocr
+                analysis_image, recovered_items, ocr
             )
             filtered_items = list(filter_ocr_items_near_aruco(
                 recovered_items,
@@ -412,12 +433,18 @@ def process_image(
                 "success": bool(raw_items),
                 "raw_item_count": len(raw_items),
                 "filtered_item_count": len(filtered_items),
+                "orientation_correction": {
+                    "applied": analysis_image != image,
+                    "angle": orientation_angle,
+                },
                 "quantity_crop_recovery": recovery,
                 "embossed_declaration_recovery": declaration_recovery,
             }
             if not raw_items:
                 _record_failure(result, "ocr", "PaddleOCR returned no text")
         except Exception as exc:
+            if orientation_directory is not None:
+                orientation_directory.cleanup()
             _record_failure(result, "ocr", f"OCR failed: {exc}")
             result["glyph_measurement"] = {
                 "status": "REVIEW", "confidence": 0.0, "reason": "OCR failed"
@@ -467,7 +494,7 @@ def process_image(
                         + f"_contrast_{target_name.lower()}{base.suffix or '.jpg'}"
                     )
                 contrast_targets[target_name] = contrast_measurer(
-                    image,
+                    analysis_image,
                     evidence,
                     target_name,
                     image_quality=result.get("image_quality"),
@@ -509,7 +536,7 @@ def process_image(
             try:
                 debug_image_path = str(debug_path) if debug_path is not None else None
                 result["glyph_measurement"] = glyph_measurer(
-                    image,
+                    analysis_image,
                     extracted_quantity,
                     pixels_per_mm,
                     debug=debug_path is not None,
@@ -538,7 +565,10 @@ def process_image(
             }
     except Exception as exc:
         _record_failure(result, "unexpected_exception", str(exc))
-    return _finalize_image_result(result)
+    finalized = _finalize_image_result(result)
+    if orientation_directory is not None:
+        orientation_directory.cleanup()
+    return finalized
 
 
 def _finalize_image_result(result: dict[str, Any]) -> dict[str, Any]:

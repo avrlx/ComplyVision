@@ -43,7 +43,7 @@ class DeclarationExtractorTests(unittest.TestCase):
 
         result = enhance_extracted_fields(fields)
 
-        self.assertEqual(result["product"]["value"], "Classic Tea Time Biscuit")
+        self.assertEqual(result["product"]["value"], "Biscuit")
         self.assertEqual(result["mrp"]["value"], 60.0)
         self.assertTrue(result["mrp"]["inclusive_of_all_taxes"])
         self.assertEqual(result["unit_sale_price"]["value"], 0.30)

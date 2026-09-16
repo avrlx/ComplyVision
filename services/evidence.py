@@ -187,7 +187,10 @@ def scrub_local_paths(value: Any) -> Any:
         return {
             key: scrub_local_paths(item)
             for key, item in value.items()
-            if key not in {"debug_image_path", "debug_overlay_path", "debug_image_saved"}
+            if key not in {
+                "debug_image_path", "debug_overlay_path", "debug_image_saved",
+                "analysis_image_path",
+            }
         }
     if isinstance(value, list):
         return [scrub_local_paths(item) for item in value]
