@@ -1,4 +1,5 @@
 # ComplyVision
+[![ComplyVision: AI for Package Compliance](https://repoclip.io/api/badge/e16bbc07-8fca-4c2e-bc74-0d3d924afe05)](https://repoclip.io/v/e16bbc07-8fca-4c2e-bc74-0d3d924afe05)
 
 ComplyVision is an SIH 2026 decision-support prototype for evidence-backed review of declarations on packaged commodities. A Next.js dashboard sends one package image to the existing FastAPI analysis pipeline and renders the canonical compliance report without duplicating OCR, computer-vision, extraction, measurement, or Legal Metrology rule logic in the browser.
 
